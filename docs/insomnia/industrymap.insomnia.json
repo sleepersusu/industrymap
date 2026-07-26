@@ -627,7 +627,7 @@
       "created": 1753500000000,
       "url": "{{ _.baseUrl }}/api/supply-relations/market-shares",
       "name": "寫入市佔率",
-      "description": "POST /api/supply-relations/market-shares — 201 建立成功／400 維度缺漏或百分比超出 0–100／404 查無公司或零件／409 同一來源已寫過相同維度。\n期間、地區、口徑為必填；不同來源對同一組維度的不同數值可並存。\n市佔率可在尚未建立供應關係時先行寫入。",
+      "description": "POST /api/supply-relations/market-shares — 201 建立成功／400 維度缺漏或百分比超出 0–100／404 查無公司或零件／409 同一來源已寫過相同維度。\n期間、地區、口徑為必填；不同來源對同一組維度的不同數值可並存。\n市佔率可在尚未建立供應關係時先行寫入。\n\n⚠️ 已知問題（2026-07-26 實測）：與上一支相同，companyId 目前無法從 API 取得，需直接查資料庫。",
       "method": "POST",
       "body": {
         "mimeType": "application/json",

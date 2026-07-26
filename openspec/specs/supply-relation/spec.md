@@ -1,0 +1,84 @@
+# supply-relation Specification
+
+## Purpose
+TBD - created by archiving change add-industry-map-core-model. Update Purpose after archive.
+## Requirements
+### Requirement: 公司與零件的關係必須帶角色
+
+系統 SHALL 以 `company_item_role` 記錄公司對零件扮演的角色（設計、製造、代工組裝、品牌、封測）。
+同一組（公司, 零件）MUST 可存在多筆不同角色的資料。
+
+#### Scenario: 同一零件不同公司不同角色
+- **WHEN** 某晶片同時登錄「聯發科—設計」與「台積電—製造」
+- **THEN** 系統 SHALL 保留兩筆資料，且查詢該零件的供應公司時回傳兩家公司與各自角色
+
+#### Scenario: 同一公司同一零件多重角色
+- **WHEN** 台積電對某晶片同時登錄「製造」與「封測」
+- **THEN** 系統 SHALL 保留兩筆資料，MUST NOT 視為重複
+
+#### Scenario: 同一組公司零件角色重複
+- **WHEN** 嘗試為同一組（公司, 零件, 角色）建立第二筆資料
+- **THEN** 系統 SHALL 拒絕寫入並回傳 409 衝突
+
+#### Scenario: 查詢零件的組裝商
+- **WHEN** 查詢 PCB 的供應公司並指定角色為代工組裝
+- **THEN** 系統 SHALL 只回傳角色為代工組裝的公司
+
+### Requirement: 市佔率以獨立實體記錄且必須帶維度
+
+系統 SHALL 以 `market_share` 記錄市佔率，每筆 MUST 包含公司、零件、期間（年或季）、地區、
+口徑（營收或出貨量）與百分比。缺少任一維度 MUST 拒絕寫入。
+
+#### Scenario: 同一零件不同期間並存
+- **WHEN** 同一家公司同一零件登錄 2023 年與 2024 年市佔率
+- **THEN** 系統 SHALL 保留兩筆資料，MUST NOT 互相覆蓋
+
+#### Scenario: 同一零件不同地區並存
+- **WHEN** 同一家公司同一零件同一期間登錄「全球」與「台灣」市佔率
+- **THEN** 系統 SHALL 保留兩筆資料
+
+#### Scenario: 同一零件不同口徑並存
+- **WHEN** 同一組公司零件期間地區同時登錄營收口徑與出貨量口徑
+- **THEN** 系統 SHALL 保留兩筆資料
+
+#### Scenario: 缺少維度時拒絕寫入
+- **WHEN** 建立市佔率但未提供地區
+- **THEN** 系統 SHALL 拒絕寫入並回傳 400 驗證錯誤
+
+#### Scenario: 百分比超出範圍
+- **WHEN** 建立市佔率且百分比小於 0 或大於 100
+- **THEN** 系統 SHALL 拒絕寫入並回傳 400 驗證錯誤
+
+### Requirement: 市佔率允許來源互相衝突的資料並存
+
+同一組（公司, 零件, 期間, 地區, 口徑）在**不同來源**下 MUST 可各自存在一筆資料，
+系統 MUST NOT 因數值不同而拒絕寫入。同一來源下該組合 MUST 唯一。
+
+#### Scenario: 兩個來源給出不同數值
+- **WHEN** 來源 A 記錄 Shimano 變速器市佔 70%，來源 B 記錄 50%，其餘維度相同
+- **THEN** 系統 SHALL 同時保留兩筆資料，查詢時一併回傳各自來源
+
+#### Scenario: 同一來源重複寫入
+- **WHEN** 同一來源對同一組合再次寫入
+- **THEN** 系統 SHALL 拒絕寫入並回傳 409 衝突
+
+### Requirement: 市佔率不強制關聯供應角色
+
+`market_share` MUST NOT 強制外鍵至 `company_item_role`。市佔率資料可在角色關係尚未建立前先行寫入。
+
+#### Scenario: 先有市佔率後有角色
+- **WHEN** 為尚未建立任何角色關係的（公司, 零件）組合寫入市佔率
+- **THEN** 系統 SHALL 成功寫入
+
+### Requirement: 市佔率排名查詢
+
+系統 SHALL 提供 API，給定零件與期間、地區、口徑後，回傳依市佔率由高至低排序的公司清單。
+
+#### Scenario: 查詢零件市佔龍頭
+- **WHEN** 查詢變速器 2024 年全球營收口徑的市佔率排名
+- **THEN** 系統 SHALL 回傳依百分比降冪排序的公司清單，第一筆即市佔最大者
+
+#### Scenario: 排名查詢無資料
+- **WHEN** 查詢的零件在該期間地區口徑下無任何市佔率資料
+- **THEN** 系統 SHALL 回傳空清單，MUST NOT 回傳 404
+
