@@ -120,7 +120,8 @@ public class ItemController {
 
     @GetMapping("/{id}/compositions")
     @Operation(summary = "查節點的組成關係",
-            description = "逐筆回傳上下層節點、必要性與審核狀態。組成樹回應只給節點 id，"
+            description = "上下兩個方向都回傳（本節點作為上層、以及作為下層零件的關係），"
+                    + "逐筆帶上下層節點、必要性與審核狀態。組成樹回應只給節點 id，"
                     + "這支補上關係本身的定位資訊，讓組成關係也能經審核端點以自然鍵定位。")
     @ApiResponses({
             @ApiResponse(responseCode = "200", description = "成功；無資料時回空清單"),

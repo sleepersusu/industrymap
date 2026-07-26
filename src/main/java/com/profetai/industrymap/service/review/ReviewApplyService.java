@@ -28,22 +28,13 @@ public class ReviewApplyService {
     private final NaturalKeyResolver naturalKeyResolver;
 
     /**
-     * 以內部 id 套用單筆審核。既有呼叫端與測試沿用這個入口（design D1：id 定位不移除）。
-     *
-     * @throws ServerException 查無目標（404）、轉為已驗證／已駁回卻未提供審核者（400）
-     */
-    @Transactional
-    public ReviewResultResponse apply(ReviewTargetType targetType, Long targetId,
-                                      ReviewStatus targetStatus, String reviewer) {
-
-        return applyResolved(targetType, targetId, targetStatus, reviewer);
-    }
-
-    /**
-     * 以內部 id 或自然鍵套用單筆審核。
+     * 以內部 id 或自然鍵套用單筆審核（design D1：id 定位不移除，只是不再是唯一方式）。
      *
      * <p>兩者同時提供時以 id 為準——id 是精確定位，自然鍵還要再查一次，
-     * 兩者衝突時回錯誤只會讓呼叫端多一種要處理的失敗情況（design D1）。</p>
+     * 兩者衝突時回錯誤只會讓呼叫端多一種要處理的失敗情況。</p>
+     *
+     * <p>只有這一個入口，不另留「只收 id」的多載：那種多載繞過下面的定位檢查，
+     * 傳入 null 會一路走到 {@code findById(null)} 變成 500 而非 400。</p>
      *
      * @throws ServerException 兩種定位都未提供或自然鍵欄位不足（400）、查無目標（404）、
      *                         轉為已驗證／已駁回卻未提供審核者（400）
@@ -56,17 +47,12 @@ public class ReviewApplyService {
             throw new ServerException("必須提供目標識別碼或自然鍵：" + targetType, HttpStatus.BAD_REQUEST);
         }
         Long resolvedId = targetId != null ? targetId : naturalKeyResolver.resolveId(targetType, naturalKey);
-        return applyResolved(targetType, resolvedId, targetStatus, reviewer);
-    }
 
-    private ReviewResultResponse applyResolved(ReviewTargetType targetType, Long targetId,
-                                               ReviewStatus targetStatus, String reviewer) {
-
-        ProvenanceEntity target = reviewLookupService.getTarget(targetType, targetId);
+        ProvenanceEntity target = reviewLookupService.getTarget(targetType, resolvedId);
         ProvenanceEntity reviewed = reviewService.applyReview(target, targetStatus, reviewer);
         ProvenanceEntity saved = reviewLookupService.save(targetType, reviewed);
 
-        log.info("審核完成 targetType={} targetId={} status={}", targetType, targetId, saved.getReviewStatus());
-        return ReviewResultResponse.from(targetType, targetId, saved);
+        log.info("審核完成 targetType={} targetId={} status={}", targetType, resolvedId, saved.getReviewStatus());
+        return ReviewResultResponse.from(targetType, resolvedId, naturalKey, saved);
     }
 }

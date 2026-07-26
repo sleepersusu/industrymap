@@ -103,8 +103,7 @@ public class BulkAuthoringService {
             CompanyItemRole role = companyItemRoleService.create(request);
             return BatchCreateResultResponse.success(index, ReviewTargetType.COMPANY_ITEM_ROLE, role.getId(),
                     ReviewTargetKey.builder()
-                            // 回傳統一規則下的對外識別，而非呼叫端原本填的值（design D4）
-                            .companyCode(companyService.referenceOf(role.getCompany()))
+                            .companyCode(referenceOf(role.getCompany(), request.getCompanyCode()))
                             .itemId(request.getItemId())
                             .companyRole(request.getCompanyRole())
                             .build());
@@ -117,7 +116,7 @@ public class BulkAuthoringService {
             MarketShare marketShare = marketShareService.create(request);
             return BatchCreateResultResponse.success(index, ReviewTargetType.MARKET_SHARE, marketShare.getId(),
                     ReviewTargetKey.builder()
-                            .companyCode(companyService.referenceOf(marketShare.getCompany()))
+                            .companyCode(referenceOf(marketShare.getCompany(), request.getCompanyCode()))
                             .itemId(request.getItemId())
                             .periodType(request.getPeriodType())
                             .periodValue(request.getPeriodValue())
@@ -126,6 +125,24 @@ public class BulkAuthoringService {
                             .sourceDetail(marketShare.getSourceDetail())
                             .build());
         });
+    }
+
+    /**
+     * 組出自然鍵要用的公司對外識別：優先統一規則下的識別（design D4），查詢失敗則退回呼叫端原本送出的代號。
+     *
+     * <p>降級是必要的：建立那一筆的交易此時已經 commit，若讓這個純粹為了「給比較漂亮的值」而做的
+     * 查詢把整筆炸成失敗，就會出現「資料已寫進去、卻回報建立失敗且不帶定位資訊」的狀態——
+     * 呼叫端既不會拿它去審核，重送又會撞 409，那筆資料等於永遠停在草稿。
+     * 退回原本的代號不影響可用性：它剛剛才成功解析過，一定定位得到同一家公司。</p>
+     */
+    private String referenceOf(Company company, String requestedCompanyCode) {
+        try {
+            return companyService.referenceOf(company);
+        } catch (Exception ex) {
+            log.warn("解析公司對外識別失敗，改用呼叫端提供的代號 companyCode={} reason={}",
+                    requestedCompanyCode, ex.getMessage(), ex);
+            return requestedCompanyCode;
+        }
     }
 
     /**

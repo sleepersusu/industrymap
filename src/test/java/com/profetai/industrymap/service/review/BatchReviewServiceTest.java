@@ -160,6 +160,33 @@ class BatchReviewServiceTest {
                         ReviewStatus.VERIFIED, REVIEWER));
     }
 
+    @Test
+    @DisplayName("以自然鍵定位的項目失敗時，回應應帶回該筆的自然鍵供呼叫端辨識")
+    void applyBatch_naturalKeyTargetFails_shouldEchoNaturalKeyInFailure() {
+        // Given：同一批同型別的多筆自然鍵目標，失敗項目若只回 targetType 與 null 的 targetId，
+        // 兩筆失敗長得一模一樣，呼叫端只能靠陣列位置回推是哪個識別碼打錯
+        ReviewTargetKey valid = ReviewTargetKey.builder()
+                .identifierType(IdentifierType.TWSE).identifierValue("2330").build();
+        ReviewTargetKey unknown = ReviewTargetKey.builder()
+                .identifierType(IdentifierType.TWSE).identifierValue("9999").build();
+        givenApplySucceeds(ReviewTargetType.COMPANY_IDENTIFIER, null, valid);
+        when(reviewApplyService.apply(ReviewTargetType.COMPANY_IDENTIFIER, null, unknown,
+                ReviewStatus.VERIFIED, REVIEWER))
+                .thenThrow(new ServerException("查無此審核目標", HttpStatus.NOT_FOUND));
+
+        // When
+        List<ReviewResultResponse> results = batchReviewService.applyBatch(batchRequest(
+                ReviewTarget.builder().targetType(ReviewTargetType.COMPANY_IDENTIFIER).naturalKey(valid).build(),
+                ReviewTarget.builder().targetType(ReviewTargetType.COMPANY_IDENTIFIER).naturalKey(unknown).build()));
+
+        // Then
+        assertAll(
+                () -> assertTrue(results.get(0).isSuccess()),
+                () -> assertFalse(results.get(1).isSuccess()),
+                () -> assertEquals(unknown, results.get(1).getNaturalKey()),
+                () -> assertEquals("9999", results.get(1).getNaturalKey().getIdentifierValue()));
+    }
+
     private void givenApplySucceeds(ReviewTargetType targetType, Long targetId) {
         givenApplySucceeds(targetType, targetId, null);
     }

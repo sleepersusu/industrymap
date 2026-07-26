@@ -40,10 +40,11 @@ public class BatchReviewService {
                 // 這裡是批次迴圈的邊界層，攔截範圍刻意涵蓋非業務例外：單筆交易 commit 期的
                 // 鎖競爭等失敗拋的不是 ServerException，只攔 ServerException 會讓剩餘項目
                 // 全部不處理、呼叫端也拿不到逐筆結果，正好違反本端點的逐筆回報語意。
-                log.warn("批次審核單筆失敗 targetType={} targetId={} reason={}",
-                        target.getTargetType(), target.getTargetId(), ex.getMessage(), ex);
-                results.add(ReviewResultResponse.failure(
-                        target.getTargetType(), target.getTargetId(), ex.getMessage()));
+                log.warn("批次審核單筆失敗 targetType={} targetId={} naturalKey={} reason={}",
+                        target.getTargetType(), target.getTargetId(), target.getNaturalKey(), ex.getMessage(), ex);
+                // 自然鍵定位的失敗項目沒有 targetId，不把自然鍵帶回去，呼叫端就分不出是哪一筆失敗
+                results.add(ReviewResultResponse.failure(target.getTargetType(), target.getTargetId(),
+                        target.getNaturalKey(), ex.getMessage()));
             }
         }
 

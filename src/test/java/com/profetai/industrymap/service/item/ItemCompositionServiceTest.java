@@ -277,17 +277,67 @@ class ItemCompositionServiceTest {
     }
 
     @Test
-    @DisplayName("明確指定納入草稿時查詢範圍應含草稿，且任何情況都不含已駁回")
+    @DisplayName("節點作為下層零件時，向上的組成關係也應查得到")
+    void findCompositions_nodeAsChild_shouldAlsoReturnUpwardRelations() {
+        // Given：只有「腳踏車 → 變速器」一筆關係，呼叫端從變速器（下層）出發查詢——
+        // 產業地圖的主要使用方向是從零件往上看，查不到就等於這筆關係無從取得自然鍵去審核
+        when(itemRepository.findById(2L)).thenReturn(Optional.of(itemB));
+        ItemComposition edge = composition(itemA, itemB);
+        edge.setId(7L);
+        when(itemCompositionRepository.findByParentItemIdAndReviewStatusIn(2L, VERIFIED_ONLY))
+                .thenReturn(List.of());
+        when(itemCompositionRepository.findByChildItemIdAndReviewStatusIn(2L, VERIFIED_ONLY))
+                .thenReturn(List.of(edge));
+
+        // When
+        List<CompositionResponse> compositions = itemCompositionService.findCompositions(2L, false);
+
+        // Then
+        assertAll(
+                () -> assertEquals(1, compositions.size()),
+                () -> assertEquals(1L, compositions.get(0).getParentItemId()),
+                () -> assertEquals(2L, compositions.get(0).getChildItemId()));
+    }
+
+    @Test
+    @DisplayName("同時作為上層與下層時應回傳兩個方向的關係且不重複")
+    void findCompositions_nodeAsBothEnds_shouldReturnBothDirectionsWithoutDuplication() {
+        // Given：主機板既掛在 PC 之下，自己底下又有 PCB
+        Item itemC = Item.builder().id(3L).normalizedName("c").displayName("C").build();
+        ItemComposition downward = composition(itemB, itemC);
+        downward.setId(8L);
+        ItemComposition upward = composition(itemA, itemB);
+        upward.setId(9L);
+        when(itemRepository.findById(2L)).thenReturn(Optional.of(itemB));
+        when(itemCompositionRepository.findByParentItemIdAndReviewStatusIn(2L, VERIFIED_ONLY))
+                .thenReturn(List.of(downward));
+        when(itemCompositionRepository.findByChildItemIdAndReviewStatusIn(2L, VERIFIED_ONLY))
+                .thenReturn(List.of(upward));
+
+        // When
+        List<CompositionResponse> compositions = itemCompositionService.findCompositions(2L, false);
+
+        // Then
+        assertAll(
+                () -> assertEquals(2, compositions.size()),
+                () -> assertEquals(List.of(8L, 9L), compositions.stream().map(CompositionResponse::getId).toList()));
+    }
+
+    @Test
+    @DisplayName("明確指定納入草稿時兩個方向都應以含草稿的範圍查詢，且任何情況都不含已駁回")
     void findCompositions_includingDrafts_shouldQueryVerifiedAndDraftButNeverRejected() {
         Set<ReviewStatus> expectedScope = Set.of(ReviewStatus.VERIFIED, ReviewStatus.DRAFT);
         when(itemRepository.findById(1L)).thenReturn(Optional.of(itemA));
         when(itemCompositionRepository.findByParentItemIdAndReviewStatusIn(1L, expectedScope))
+                .thenReturn(List.of());
+        when(itemCompositionRepository.findByChildItemIdAndReviewStatusIn(1L, expectedScope))
                 .thenReturn(List.of());
 
         itemCompositionService.findCompositions(1L, true);
 
         assertAll(
                 () -> verify(itemCompositionRepository).findByParentItemIdAndReviewStatusIn(1L, expectedScope),
+                () -> verify(itemCompositionRepository).findByChildItemIdAndReviewStatusIn(1L, expectedScope),
                 () -> verify(itemCompositionRepository, never())
                         .findByParentItemIdAndReviewStatusIn(1L, Set.of(ReviewStatus.REJECTED)));
     }

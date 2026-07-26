@@ -56,7 +56,7 @@ class ReviewApplyServiceTest {
 
         // When
         ReviewResultResponse result =
-                reviewApplyService().apply(ReviewTargetType.ITEM, 1L, ReviewStatus.VERIFIED, "reviewer@profetai");
+                reviewApplyService().apply(ReviewTargetType.ITEM, 1L, null, ReviewStatus.VERIFIED, "reviewer@profetai");
 
         // Then
         assertAll(
@@ -78,7 +78,7 @@ class ReviewApplyServiceTest {
                 .thenAnswer(invocation -> invocation.getArgument(1));
 
         ReviewResultResponse result =
-                reviewApplyService().apply(ReviewTargetType.ITEM, 1L, ReviewStatus.DRAFT, null);
+                reviewApplyService().apply(ReviewTargetType.ITEM, 1L, null, ReviewStatus.DRAFT, null);
 
         assertAll(
                 () -> assertEquals(ReviewStatus.DRAFT, result.getReviewStatus()),
@@ -97,7 +97,7 @@ class ReviewApplyServiceTest {
                 .thenAnswer(invocation -> invocation.getArgument(1));
 
         ReviewResultResponse result =
-                reviewApplyService().apply(ReviewTargetType.ITEM, 1L, ReviewStatus.REJECTED, "reviewer@profetai");
+                reviewApplyService().apply(ReviewTargetType.ITEM, 1L, null, ReviewStatus.REJECTED, "reviewer@profetai");
 
         assertAll(
                 () -> assertEquals(ReviewStatus.REJECTED, result.getReviewStatus()),
@@ -113,7 +113,7 @@ class ReviewApplyServiceTest {
                 .thenThrow(new ServerException("查無此審核目標", HttpStatus.NOT_FOUND));
 
         ServerException ex = assertThrows(ServerException.class, () -> reviewApplyService()
-                .apply(ReviewTargetType.ITEM, 404L, ReviewStatus.VERIFIED, "reviewer@profetai"));
+                .apply(ReviewTargetType.ITEM, 404L, null, ReviewStatus.VERIFIED, "reviewer@profetai"));
 
         assertAll(
                 () -> assertEquals(HttpStatus.NOT_FOUND, ex.getHttpStatus()),
@@ -126,7 +126,7 @@ class ReviewApplyServiceTest {
         when(reviewLookupService.getTarget(ReviewTargetType.ITEM, 1L)).thenReturn(draftItem());
 
         ServerException ex = assertThrows(ServerException.class,
-                () -> reviewApplyService().apply(ReviewTargetType.ITEM, 1L, ReviewStatus.VERIFIED, "  "));
+                () -> reviewApplyService().apply(ReviewTargetType.ITEM, 1L, null, ReviewStatus.VERIFIED, "  "));
 
         assertAll(
                 () -> assertEquals(HttpStatus.BAD_REQUEST, ex.getHttpStatus()),

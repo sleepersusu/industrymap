@@ -25,8 +25,15 @@ public class ReviewResultResponse {
     @Schema(description = "目標類型")
     private ReviewTargetType targetType;
 
-    @Schema(description = "目標識別碼")
+    @Schema(description = "目標識別碼；以自然鍵定位時為系統解析出的識別碼，解析失敗時為空")
     private Long targetId;
+
+    /**
+     * 以自然鍵定位時，失敗項目的 {@code targetId} 必然為空；若不把自然鍵帶回來，
+     * 同一批同型別的多筆失敗會長得一模一樣，呼叫端只能靠陣列位置回推是哪一筆。
+     */
+    @Schema(description = "呼叫端指定的自然鍵；以內部識別碼定位時為空")
+    private ReviewTargetKey naturalKey;
 
     @Schema(description = "該筆是否審核成功")
     private boolean success;
@@ -43,10 +50,12 @@ public class ReviewResultResponse {
     @Schema(description = "失敗原因；成功時為空")
     private String message;
 
-    public static ReviewResultResponse from(ReviewTargetType targetType, Long targetId, ProvenanceEntity entity) {
+    public static ReviewResultResponse from(ReviewTargetType targetType, Long targetId,
+                                            ReviewTargetKey naturalKey, ProvenanceEntity entity) {
         return ReviewResultResponse.builder()
                 .targetType(targetType)
                 .targetId(targetId)
+                .naturalKey(naturalKey)
                 .success(true)
                 .reviewStatus(entity.getReviewStatus())
                 .reviewedBy(entity.getReviewedBy())
@@ -54,10 +63,12 @@ public class ReviewResultResponse {
                 .build();
     }
 
-    public static ReviewResultResponse failure(ReviewTargetType targetType, Long targetId, String message) {
+    public static ReviewResultResponse failure(ReviewTargetType targetType, Long targetId,
+                                               ReviewTargetKey naturalKey, String message) {
         return ReviewResultResponse.builder()
                 .targetType(targetType)
                 .targetId(targetId)
+                .naturalKey(naturalKey)
                 .success(false)
                 .message(message)
                 .build();

@@ -229,6 +229,29 @@ class BulkAuthoringServiceTest {
                 () -> verify(companyItemRoleService).create(any(CreateCompanyItemRoleRequest.class)));
     }
 
+    @Test
+    @DisplayName("建立成功後解析公司對外識別失敗時，該筆仍應回報成功並以呼叫端送出的代號當自然鍵")
+    void createSupplyRoles_referenceLookupFails_shouldStillReportSuccessWithRequestedCode() {
+        // Given：供應角色那一筆交易已 commit，之後才做的對外識別查詢掛掉。
+        // 若讓它把整筆炸成失敗，資料已寫進去卻不帶定位資訊，呼叫端既不會拿去審核、重送又會撞 409
+        CompanyItemRole role = CompanyItemRole.builder()
+                .id(51L).company(tsmc).companyRole(CompanyRole.MANUFACTURE).build();
+        when(companyItemRoleService.create(any(CreateCompanyItemRoleRequest.class))).thenReturn(role);
+        when(companyService.referenceOf(tsmc)).thenThrow(new CannotAcquireLockException("connection lost"));
+
+        // When
+        List<BatchCreateResultResponse> results = bulkAuthoringService.createSupplyRoles(List.of(
+                CreateCompanyItemRoleRequest.builder()
+                        .companyCode("台積電").itemId(2L).companyRole(CompanyRole.MANUFACTURE)
+                        .provenance(manualProvenance()).build()));
+
+        // Then：退回呼叫端原本送出的代號，它剛剛才成功解析過，一定定位得到同一家公司
+        assertAll(
+                () -> assertTrue(results.get(0).isSuccess()),
+                () -> assertEquals(51L, results.get(0).getTargetId()),
+                () -> assertEquals("台積電", results.get(0).getNaturalKey().getCompanyCode()));
+    }
+
     private Item item(Long id, String displayName) {
         return Item.builder().id(id).displayName(displayName).normalizedName(displayName)
                 .sourceType(SourceType.MANUAL).build();

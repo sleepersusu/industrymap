@@ -54,6 +54,6 @@
 - [x] 7.4 記錄本次仍未解決或新發現的可用性問題，寫入 design.md 供 AI pipeline change 參考
 - [x] 7.5 執行 `./mvnw clean test-compile` 後 `./mvnw surefire:test` 確認快測全綠
 - [x] 7.6 執行 `./mvnw verify` 跑全量，附實際輸出
-- [ ] 7.7 以 `/code-review` 進行 fresh-context diff review，只修正確性問題
+- [x] 7.7 以 `/code-review` 進行 fresh-context diff review，只修正確性問題
 - [x] 7.8 更新 `.claude/rules/api-design.md`：補上「內部作業端點可用自然鍵定位」與「不曝露內部 id 原則的適用範圍」
 - [x] 7.9 更新 `docs/CHANGELOG.md`（含 `companyReference` 的行為變更）

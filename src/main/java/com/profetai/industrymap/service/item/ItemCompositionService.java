@@ -24,6 +24,7 @@ import java.util.Deque;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Set;
+import java.util.stream.Stream;
 
 /**
  * part-of 組成關係的建立與查詢。
@@ -79,10 +80,14 @@ public class ItemCompositionService {
     }
 
     /**
-     * 查某節點底下的組成關係。
+     * 查某節點的組成關係，上下兩個方向都回傳。
      *
      * <p>組成樹回應只給節點 id，拿不到關係本身的定位資訊，這一類資料因此無法經 API 審核；
      * 本方法把關係逐筆攤平回傳，補上這一角（見 spec「組成關係可經查詢取得」）。</p>
+     *
+     * <p>刻意不只回下行邊：產業地圖的主要使用方向是「從零件往上看」，只回下行邊時，
+     * 站在葉節點的呼叫端就取不到那筆把它接上去的關係，也就無從審核它——除非它另外知道
+     * 上層節點的 id，而那正是本 change 要消除的前提。</p>
      *
      * <p>回傳 payload 而非 entity：上下層節點是 LAZY 關聯，open-in-view 為 false，
      * 組裝必須留在這個交易內。</p>
@@ -93,8 +98,12 @@ public class ItemCompositionService {
     @Transactional(readOnly = true)
     public List<CompositionResponse> findCompositions(Long itemId, boolean includeDrafts) {
         getItem(itemId);
-        return itemCompositionRepository
-                .findByParentItemIdAndReviewStatusIn(itemId, ReviewScopes.visibleStatuses(includeDrafts)).stream()
+        Set<ReviewStatus> statuses = ReviewScopes.visibleStatuses(includeDrafts);
+
+        // 兩個方向的結果不會重疊：DB 已擋掉自我循環，同一筆關係不可能同時以本節點為上層與下層
+        return Stream.concat(
+                        itemCompositionRepository.findByParentItemIdAndReviewStatusIn(itemId, statuses).stream(),
+                        itemCompositionRepository.findByChildItemIdAndReviewStatusIn(itemId, statuses).stream())
                 .map(CompositionResponse::from)
                 .toList();
     }

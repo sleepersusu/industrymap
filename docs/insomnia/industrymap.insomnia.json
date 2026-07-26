@@ -28,7 +28,9 @@
         "companyCode": "2330",
         "supplierCompanyCode": "5306",
         "reviewer": "sleepersusu",
-        "compositionId": "1"
+        "compositionId": "1",
+        "bulkCompanyName": "禧瑪諾",
+        "bulkCompanyCode": "7309"
       },
       "dataPropertyOrder": {
         "&": [
@@ -39,7 +41,9 @@
           "companyCode",
           "supplierCompanyCode",
           "reviewer",
-          "compositionId"
+          "compositionId",
+          "bulkCompanyName",
+          "bulkCompanyCode"
         ]
       },
       "color": null,
@@ -1134,7 +1138,7 @@
       "created": 1753500000000,
       "url": "{{ _.baseUrl }}/api/items/{{ _.itemId }}/compositions",
       "name": "查節點的組成關係",
-      "description": "GET /api/items/{id}/compositions — 200 成功（無資料回空清單）／404 查無此節點。\n逐筆回傳 parentItemId、childItemId、necessity 與 reviewStatus。組成樹只給節點 id，這支才拿得到關係本身的定位資訊；審核組成關係時用回傳的上下層節點當自然鍵即可。\nincludeDrafts=true 可一併看草稿；已駁回一律不外露。",
+      "description": "GET /api/items/{id}/compositions — 200 成功（無資料回空清單）／404 查無此節點。\n上下兩個方向都回傳：本節點作為上層的關係，以及把本節點接到上層去的關係。\n逐筆帶 parentItemId、childItemId、necessity 與 reviewStatus；審核組成關係時用上下層節點當自然鍵即可。\nincludeDrafts=true 可一併看草稿；已駁回一律不外露。",
       "method": "GET",
       "body": {},
       "parameters": [],
@@ -1161,7 +1165,7 @@
       "method": "POST",
       "body": {
         "mimeType": "application/json",
-        "text": "{\n  \"targetType\": \"COMPANY_IDENTIFIER\",\n  \"naturalKey\": {\n    \"identifierType\": \"TWSE\",\n    \"identifierValue\": \"{{ _.companyCode }}\"\n  },\n  \"targetStatus\": \"VERIFIED\",\n  \"reviewer\": \"{{ _.reviewer }}\"\n}"
+        "text": "{\n  \"targetType\": \"COMPANY_IDENTIFIER\",\n  \"naturalKey\": {\n    \"identifierType\": \"TSE\",\n    \"identifierValue\": \"{{ _.bulkCompanyCode }}\"\n  },\n  \"targetStatus\": \"VERIFIED\",\n  \"reviewer\": \"{{ _.reviewer }}\"\n}"
       },
       "parameters": [],
       "headers": [
@@ -1189,11 +1193,11 @@
       "created": 1753500000000,
       "url": "{{ _.baseUrl }}/api/reviews/batch",
       "name": "批次審核——以自然鍵定位（可直接貼上批次建立回應）",
-      "description": "POST /api/reviews/batch — 200 逐筆回報。\n各筆可分別用 targetId 或 naturalKey。批次建立端點（07 Bulk）回應中每筆成功項目的 targetType 與 naturalKey 可原封不動搬進 targets，不需再查任何端點。",
+      "description": "POST /api/reviews/batch — 200 逐筆回報。\n各筆可分別用 targetId 或 naturalKey。此範例對應「07 Bulk 批次建立」整條走查建立的六類資料，跑完 07 之後直接送這支即可一次審完。\n實務上把各批次建立回應中成功項目的 targetType 與 naturalKey 原封不動搬進 targets 即可，不需再查任何端點。\n失敗項目會把 naturalKey 一併帶回，可據此對回原始資料。",
       "method": "POST",
       "body": {
         "mimeType": "application/json",
-        "text": "{\n  \"targets\": [\n    {\n      \"targetType\": \"ITEM\",\n      \"naturalKey\": { \"name\": \"腳踏車\" }\n    },\n    {\n      \"targetType\": \"ITEM_COMPOSITION\",\n      \"naturalKey\": { \"parentItemId\": {{ _.itemId }}, \"childItemId\": {{ _.childItemId }} }\n    },\n    {\n      \"targetType\": \"COMPANY_IDENTIFIER\",\n      \"naturalKey\": { \"identifierType\": \"TWSE\", \"identifierValue\": \"{{ _.companyCode }}\" }\n    },\n    {\n      \"targetType\": \"COMPANY_ITEM_ROLE\",\n      \"naturalKey\": { \"companyCode\": \"{{ _.supplierCompanyCode }}\", \"itemId\": {{ _.childItemId }}, \"companyRole\": \"MANUFACTURE\" }\n    }\n  ],\n  \"targetStatus\": \"VERIFIED\",\n  \"reviewer\": \"{{ _.reviewer }}\"\n}"
+        "text": "{\n  \"targets\": [\n    {\n      \"targetType\": \"ITEM\",\n      \"naturalKey\": { \"name\": \"腳踏車\" }\n    },\n    {\n      \"targetType\": \"ITEM_COMPOSITION\",\n      \"naturalKey\": { \"parentItemId\": {{ _.itemId }}, \"childItemId\": {{ _.childItemId }} }\n    },\n    {\n      \"targetType\": \"COMPANY\",\n      \"naturalKey\": { \"companyCode\": \"{{ _.bulkCompanyCode }}\" }\n    },\n    {\n      \"targetType\": \"COMPANY_IDENTIFIER\",\n      \"naturalKey\": { \"identifierType\": \"TSE\", \"identifierValue\": \"{{ _.bulkCompanyCode }}\" }\n    },\n    {\n      \"targetType\": \"COMPANY_ITEM_ROLE\",\n      \"naturalKey\": { \"companyCode\": \"{{ _.bulkCompanyCode }}\", \"itemId\": {{ _.childItemId }}, \"companyRole\": \"MANUFACTURE\" }\n    },\n    {\n      \"targetType\": \"MARKET_SHARE\",\n      \"naturalKey\": { \"companyCode\": \"{{ _.bulkCompanyCode }}\", \"itemId\": {{ _.childItemId }}, \"periodType\": \"YEAR\", \"periodValue\": \"2024\", \"region\": \"全球\", \"metric\": \"REVENUE\", \"sourceDetail\": \"市場報告 A\" }\n    }\n  ],\n  \"targetStatus\": \"VERIFIED\",\n  \"reviewer\": \"{{ _.reviewer }}\"\n}"
       },
       "parameters": [],
       "headers": [
@@ -1284,7 +1288,7 @@
       "modified": 1753500000000,
       "created": 1753500000000,
       "name": "07 Bulk 批次建立",
-      "description": "BulkAuthoringController：/api/bulk。一次送多筆同類型資料，逐筆回報成功或失敗原因；個別失敗不影響其他項目，因此整體一律回 200。\n每筆成功項目帶 targetType 與 naturalKey，可直接組成「05 Review 審核 → 批次審核——以自然鍵定位」的 targets。\n建一台腳踏車的順序：items → compositions → companies → identifiers → supply-roles → market-shares，最後批次審核一次。",
+      "description": "BulkAuthoringController：/api/bulk。一次送多筆同類型資料，逐筆回報成功或失敗原因；個別失敗不影響其他項目，因此整體一律回 200。\n每筆成功項目帶 targetType 與 naturalKey，可直接組成「05 Review 審核 → 批次審核——以自然鍵定位」的 targets。\n建一台腳踏車的順序：items → compositions → companies → identifiers → supply-roles → market-shares，最後批次審核一次。\n跑 items 之後，把回應中兩筆的 targetId 填進環境變數 itemId（腳踏車）與 childItemId（變速器），後續各支才對得上。",
       "environment": {},
       "environmentPropertyOrder": null,
       "metaSortKey": -600,
@@ -1365,7 +1369,7 @@
       "method": "POST",
       "body": {
         "mimeType": "application/json",
-        "text": "{\n  \"items\": [\n    {\n      \"displayName\": \"禧瑪諾\",\n      \"country\": \"JP\",\n      \"publicCompany\": true,\n      \"provenance\": { \"sourceType\": \"MANUAL\" }\n    }\n  ]\n}"
+        "text": "{\n  \"items\": [\n    {\n      \"displayName\": \"{{ _.bulkCompanyName }}\",\n      \"country\": \"JP\",\n      \"publicCompany\": true,\n      \"provenance\": { \"sourceType\": \"MANUAL\" }\n    }\n  ]\n}"
       },
       "parameters": [],
       "headers": [
@@ -1393,11 +1397,11 @@
       "created": 1753500000000,
       "url": "{{ _.baseUrl }}/api/bulk/identifiers",
       "name": "批次登記公司識別碼",
-      "description": "POST /api/bulk/identifiers — 200 逐筆回報／400 空批次或欄位驗證失敗。\n各筆自帶 companyCode；代號已被登記或該公司已有主要識別碼時回報 409。\n登記主要識別碼後，該公司的對外識別會從正規化名稱改為此代號。",
+      "description": "POST /api/bulk/identifiers — 200 逐筆回報／400 空批次或欄位驗證失敗。\n各筆自帶 companyCode，此處沿用上一支建立的公司（bulkCompanyName）；代號已被登記或該公司已有主要識別碼時回報 409。\n登記主要識別碼後，該公司的對外識別會從正規化名稱改為此代號（bulkCompanyCode），接下來的 supply-roles 與 market-shares 就用它。",
       "method": "POST",
       "body": {
         "mimeType": "application/json",
-        "text": "{\n  \"items\": [\n    {\n      \"companyCode\": \"禧瑪諾\",\n      \"identifierType\": \"TSE\",\n      \"identifierValue\": \"7309\",\n      \"primary\": true,\n      \"provenance\": { \"sourceType\": \"MANUAL\" }\n    }\n  ]\n}"
+        "text": "{\n  \"items\": [\n    {\n      \"companyCode\": \"{{ _.bulkCompanyName }}\",\n      \"identifierType\": \"TSE\",\n      \"identifierValue\": \"{{ _.bulkCompanyCode }}\",\n      \"primary\": true,\n      \"provenance\": { \"sourceType\": \"MANUAL\" }\n    }\n  ]\n}"
       },
       "parameters": [],
       "headers": [
@@ -1425,11 +1429,11 @@
       "created": 1753500000000,
       "url": "{{ _.baseUrl }}/api/bulk/supply-roles",
       "name": "批次建立供應角色",
-      "description": "POST /api/bulk/supply-roles — 200 逐筆回報／400 空批次或欄位驗證失敗。\n同一組公司零件可有多個角色，同角色重複才算衝突（409）。\n回應的 naturalKey.companyCode 一律是統一規則下的對外識別，不一定等於你送出的值。",
+      "description": "POST /api/bulk/supply-roles — 200 逐筆回報／400 空批次或欄位驗證失敗。\ncompanyCode 用前兩支建立的公司（bulkCompanyCode）；itemId 填「批次建立品類節點」回應中零件那筆的 targetId。\n同一組公司零件可有多個角色，同角色重複才算衝突（409）。\n回應的 naturalKey.companyCode 一律是統一規則下的對外識別，不一定等於你送出的值。",
       "method": "POST",
       "body": {
         "mimeType": "application/json",
-        "text": "{\n  \"items\": [\n    {\n      \"companyCode\": \"{{ _.supplierCompanyCode }}\",\n      \"itemId\": {{ _.childItemId }},\n      \"companyRole\": \"MANUFACTURE\",\n      \"provenance\": { \"sourceType\": \"EXTERNAL\", \"sourceDetail\": \"公司年報\" }\n    }\n  ]\n}"
+        "text": "{\n  \"items\": [\n    {\n      \"companyCode\": \"{{ _.bulkCompanyCode }}\",\n      \"itemId\": {{ _.childItemId }},\n      \"companyRole\": \"MANUFACTURE\",\n      \"provenance\": { \"sourceType\": \"EXTERNAL\", \"sourceDetail\": \"公司年報\" }\n    }\n  ]\n}"
       },
       "parameters": [],
       "headers": [
@@ -1461,7 +1465,7 @@
       "method": "POST",
       "body": {
         "mimeType": "application/json",
-        "text": "{\n  \"items\": [\n    {\n      \"companyCode\": \"{{ _.supplierCompanyCode }}\",\n      \"itemId\": {{ _.childItemId }},\n      \"periodType\": \"YEAR\",\n      \"periodValue\": \"2024\",\n      \"region\": \"全球\",\n      \"metric\": \"REVENUE\",\n      \"sharePercent\": 70.5,\n      \"provenance\": { \"sourceType\": \"EXTERNAL\", \"sourceDetail\": \"市場報告 A\" }\n    }\n  ]\n}"
+        "text": "{\n  \"items\": [\n    {\n      \"companyCode\": \"{{ _.bulkCompanyCode }}\",\n      \"itemId\": {{ _.childItemId }},\n      \"periodType\": \"YEAR\",\n      \"periodValue\": \"2024\",\n      \"region\": \"全球\",\n      \"metric\": \"REVENUE\",\n      \"sharePercent\": 70.5,\n      \"provenance\": { \"sourceType\": \"EXTERNAL\", \"sourceDetail\": \"市場報告 A\" }\n    }\n  ]\n}"
       },
       "parameters": [],
       "headers": [
