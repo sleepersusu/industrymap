@@ -1,0 +1,16 @@
+# 本機環境變數（含資料庫帳密），不進版控
+.env
+
+# Claude Code 的本機權限設定（含本機絕對路徑），非專案共用設定
+.claude/settings.local.json
+
+# 建置產物
+target/
+
+# IDE
+.idea/
+*.iml
+.vscode/
+
+# macOS
+.DS_Store

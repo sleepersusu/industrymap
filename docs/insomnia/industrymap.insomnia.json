@@ -1,0 +1,897 @@
+{
+  "_type": "export",
+  "__export_format": 4,
+  "__export_date": "2026-07-26T03:10:00.000Z",
+  "__export_source": "industrymap.controller-scan",
+  "resources": [
+    {
+      "_id": "wrk_industrymap",
+      "parentId": null,
+      "modified": 1753500000000,
+      "created": 1753500000000,
+      "name": "industrymap API",
+      "description": "由 src/main/java/com/profetai/industrymap/controller 的實際 @RequestMapping 產出。\n\n使用順序建議：\n1. 先跑「01 Item 品類節點 → 建立品類節點（終端成品）」與「建立品類節點（零件）」，把回傳的 id 填進環境變數 itemId / childItemId。\n2. 再跑「02 Company 公司 → 建立公司」與「登記公司識別碼」，把 id 填進 companyId。\n3. 之後即可跑組成關係、供應關係、市佔率與各查詢端點。",
+      "scope": "collection",
+      "_type": "workspace"
+    },
+    {
+      "_id": "env_base",
+      "parentId": "wrk_industrymap",
+      "modified": 1753500000000,
+      "created": 1753500000000,
+      "name": "Base Environment",
+      "data": {
+        "baseUrl": "http://localhost:8080",
+        "productId": "1",
+        "itemId": "1",
+        "childItemId": "2",
+        "companyId": "1",
+        "companyCode": "2330"
+      },
+      "dataPropertyOrder": {
+        "&": [
+          "baseUrl",
+          "productId",
+          "itemId",
+          "childItemId",
+          "companyId",
+          "companyCode"
+        ]
+      },
+      "color": null,
+      "isPrivate": false,
+      "metaSortKey": 1753500000000,
+      "_type": "environment"
+    },
+    {
+      "_id": "env_local",
+      "parentId": "env_base",
+      "modified": 1753500000000,
+      "created": 1753500000000,
+      "name": "本機 Local",
+      "data": {
+        "baseUrl": "http://localhost:8080"
+      },
+      "dataPropertyOrder": {
+        "&": [
+          "baseUrl"
+        ]
+      },
+      "color": "#7d69cb",
+      "isPrivate": false,
+      "metaSortKey": 1753500000000,
+      "_type": "environment"
+    },
+
+    {
+      "_id": "fld_item",
+      "parentId": "wrk_industrymap",
+      "modified": 1753500000000,
+      "created": 1753500000000,
+      "name": "01 Item 品類節點",
+      "description": "ItemController：/api/items",
+      "environment": {},
+      "environmentPropertyOrder": null,
+      "metaSortKey": -1000,
+      "_type": "request_group"
+    },
+    {
+      "_id": "req_item_create_product",
+      "parentId": "fld_item",
+      "modified": 1753500000000,
+      "created": 1753500000000,
+      "url": "{{ _.baseUrl }}/api/items",
+      "name": "建立品類節點（終端成品）",
+      "description": "POST /api/items — 201 建立成功／400 欄位驗證失敗／409 正規化名稱已存在。\n回傳的 data.id 請填進環境變數 productId 與 itemId。",
+      "method": "POST",
+      "body": {
+        "mimeType": "application/json",
+        "text": "{\n  \"displayName\": \"腳踏車\",\n  \"endProduct\": true,\n  \"provenance\": {\n    \"sourceType\": \"MANUAL\",\n    \"sourceDetail\": \"人工建檔\"\n  }\n}"
+      },
+      "parameters": [],
+      "headers": [
+        {
+          "id": "pair_h_item_create_product",
+          "name": "Content-Type",
+          "value": "application/json"
+        }
+      ],
+      "authentication": {},
+      "metaSortKey": -1000,
+      "isPrivate": false,
+      "settingStoreCookies": true,
+      "settingSendCookies": true,
+      "settingDisableRenderRequestBody": false,
+      "settingEncodeUrl": true,
+      "settingRebuildPath": true,
+      "settingFollowRedirects": "global",
+      "_type": "request"
+    },
+    {
+      "_id": "req_item_create_part",
+      "parentId": "fld_item",
+      "modified": 1753500000000,
+      "created": 1753500000000,
+      "url": "{{ _.baseUrl }}/api/items",
+      "name": "建立品類節點（零件）",
+      "description": "同一支端點，endProduct=false 代表零件。回傳的 data.id 請填進環境變數 childItemId。\nparentCategoryId 是 is-a 上層品類（例：車用 PCB 指向 PCB），非 part-of 組成關係。",
+      "method": "POST",
+      "body": {
+        "mimeType": "application/json",
+        "text": "{\n  \"displayName\": \"變速器\",\n  \"endProduct\": false,\n  \"parentCategoryId\": null,\n  \"provenance\": {\n    \"sourceType\": \"AI_GENERATED\",\n    \"sourceDetail\": \"claude-opus-5\",\n    \"confidence\": 0.82\n  }\n}"
+      },
+      "parameters": [],
+      "headers": [
+        {
+          "id": "pair_h_item_create_part",
+          "name": "Content-Type",
+          "value": "application/json"
+        }
+      ],
+      "authentication": {},
+      "metaSortKey": -900,
+      "isPrivate": false,
+      "settingStoreCookies": true,
+      "settingSendCookies": true,
+      "settingDisableRenderRequestBody": false,
+      "settingEncodeUrl": true,
+      "settingRebuildPath": true,
+      "settingFollowRedirects": "global",
+      "_type": "request"
+    },
+    {
+      "_id": "req_item_get",
+      "parentId": "fld_item",
+      "modified": 1753500000000,
+      "created": 1753500000000,
+      "url": "{{ _.baseUrl }}/api/items/{{ _.itemId }}",
+      "name": "取得品類節點",
+      "description": "GET /api/items/{id} — 200 成功／404 查無此節點。",
+      "method": "GET",
+      "body": {},
+      "parameters": [],
+      "headers": [],
+      "authentication": {},
+      "metaSortKey": -800,
+      "isPrivate": false,
+      "settingStoreCookies": true,
+      "settingSendCookies": true,
+      "settingDisableRenderRequestBody": false,
+      "settingEncodeUrl": true,
+      "settingRebuildPath": true,
+      "settingFollowRedirects": "global",
+      "_type": "request"
+    },
+    {
+      "_id": "req_item_resolve",
+      "parentId": "fld_item",
+      "modified": 1753500000000,
+      "created": 1753500000000,
+      "url": "{{ _.baseUrl }}/api/items",
+      "name": "以名稱或別名解析品類節點",
+      "description": "GET /api/items?name= — 200 成功／400 未提供名稱／404 名稱與別名皆查無。\n寫入前先打這支確認節點是否已存在，避免同義異名產生重複節點。名稱會先正規化再比對。",
+      "method": "GET",
+      "body": {},
+      "parameters": [
+        {
+          "id": "pair_resolve_name",
+          "name": "name",
+          "value": "變速器",
+          "description": "名稱或別名，系統會正規化後比對",
+          "disabled": false
+        }
+      ],
+      "headers": [],
+      "authentication": {},
+      "metaSortKey": -700,
+      "isPrivate": false,
+      "settingStoreCookies": true,
+      "settingSendCookies": true,
+      "settingDisableRenderRequestBody": false,
+      "settingEncodeUrl": true,
+      "settingRebuildPath": true,
+      "settingFollowRedirects": "global",
+      "_type": "request"
+    },
+    {
+      "_id": "req_item_alias",
+      "parentId": "fld_item",
+      "modified": 1753500000000,
+      "created": 1753500000000,
+      "url": "{{ _.baseUrl }}/api/items/{{ _.childItemId }}/aliases",
+      "name": "登記品類節點別名",
+      "description": "POST /api/items/{id}/aliases — 201 建立成功／404 查無此節點／409 別名與其他節點名稱或既有別名衝突。",
+      "method": "POST",
+      "body": {
+        "mimeType": "application/json",
+        "text": "{\n  \"alias\": \"變速系統\",\n  \"provenance\": {\n    \"sourceType\": \"MANUAL\",\n    \"sourceDetail\": \"人工建檔\"\n  }\n}"
+      },
+      "parameters": [],
+      "headers": [
+        {
+          "id": "pair_h_item_alias",
+          "name": "Content-Type",
+          "value": "application/json"
+        }
+      ],
+      "authentication": {},
+      "metaSortKey": -600,
+      "isPrivate": false,
+      "settingStoreCookies": true,
+      "settingSendCookies": true,
+      "settingDisableRenderRequestBody": false,
+      "settingEncodeUrl": true,
+      "settingRebuildPath": true,
+      "settingFollowRedirects": "global",
+      "_type": "request"
+    },
+    {
+      "_id": "req_item_composition",
+      "parentId": "fld_item",
+      "modified": 1753500000000,
+      "created": 1753500000000,
+      "url": "{{ _.baseUrl }}/api/items/{{ _.itemId }}/components",
+      "name": "建立 part-of 組成關係",
+      "description": "POST /api/items/{id}/components — 201 建立成功／400 未提供必要性或來源／404 查無上層或下層節點／409 關係已存在或會造成循環。\npath 上的 id 是上層（父）節點，body 的 childItemId 是下層零件。\nnecessity：STANDARD 標配 / COMMON 常見 / OPTIONAL 選配。",
+      "method": "POST",
+      "body": {
+        "mimeType": "application/json",
+        "text": "{\n  \"childItemId\": {{ _.childItemId }},\n  \"necessity\": \"STANDARD\",\n  \"provenance\": {\n    \"sourceType\": \"AI_GENERATED\",\n    \"sourceDetail\": \"claude-opus-5\",\n    \"confidence\": 0.82\n  }\n}"
+      },
+      "parameters": [],
+      "headers": [
+        {
+          "id": "pair_h_item_composition",
+          "name": "Content-Type",
+          "value": "application/json"
+        }
+      ],
+      "authentication": {},
+      "metaSortKey": -500,
+      "isPrivate": false,
+      "settingStoreCookies": true,
+      "settingSendCookies": true,
+      "settingDisableRenderRequestBody": false,
+      "settingEncodeUrl": true,
+      "settingRebuildPath": true,
+      "settingFollowRedirects": "global",
+      "_type": "request"
+    },
+    {
+      "_id": "req_item_end_products",
+      "parentId": "fld_item",
+      "modified": 1753500000000,
+      "created": 1753500000000,
+      "url": "{{ _.baseUrl }}/api/items/{{ _.childItemId }}/end-products",
+      "name": "反向查詢零件所屬的終端成品",
+      "description": "GET /api/items/{id}/end-products — 200 成功／404 查無此節點。\n沿組成關係向上回溯：這顆零件最後裝進了哪些產品。",
+      "method": "GET",
+      "body": {},
+      "parameters": [
+        {
+          "id": "pair_end_products_drafts",
+          "name": "includeDrafts",
+          "value": "false",
+          "description": "是否納入草稿資料；已駁回一律不外露",
+          "disabled": false
+        }
+      ],
+      "headers": [],
+      "authentication": {},
+      "metaSortKey": -400,
+      "isPrivate": false,
+      "settingStoreCookies": true,
+      "settingSendCookies": true,
+      "settingDisableRenderRequestBody": false,
+      "settingEncodeUrl": true,
+      "settingRebuildPath": true,
+      "settingFollowRedirects": "global",
+      "_type": "request"
+    },
+    {
+      "_id": "req_item_suppliers",
+      "parentId": "fld_item",
+      "modified": 1753500000000,
+      "created": 1753500000000,
+      "url": "{{ _.baseUrl }}/api/items/{{ _.childItemId }}/suppliers",
+      "name": "查零件的供應公司",
+      "description": "GET /api/items/{id}/suppliers — 200 成功（無資料回空清單）／400 查詢條件驗證失敗。\nrole 可省略表示全取；可用值：DESIGN / MANUFACTURE / ASSEMBLY / BRAND / PACKAGING_TESTING。",
+      "method": "GET",
+      "body": {},
+      "parameters": [
+        {
+          "id": "pair_suppliers_role",
+          "name": "role",
+          "value": "MANUFACTURE",
+          "description": "DESIGN / MANUFACTURE / ASSEMBLY / BRAND / PACKAGING_TESTING；停用此參數表示全取",
+          "disabled": true
+        },
+        {
+          "id": "pair_suppliers_drafts",
+          "name": "includeDrafts",
+          "value": "false",
+          "description": "是否納入草稿資料",
+          "disabled": false
+        }
+      ],
+      "headers": [],
+      "authentication": {},
+      "metaSortKey": -300,
+      "isPrivate": false,
+      "settingStoreCookies": true,
+      "settingSendCookies": true,
+      "settingDisableRenderRequestBody": false,
+      "settingEncodeUrl": true,
+      "settingRebuildPath": true,
+      "settingFollowRedirects": "global",
+      "_type": "request"
+    },
+    {
+      "_id": "req_item_market_share",
+      "parentId": "fld_item",
+      "modified": 1753500000000,
+      "created": 1753500000000,
+      "url": "{{ _.baseUrl }}/api/items/{{ _.childItemId }}/market-share",
+      "name": "查零件的市佔率排名",
+      "description": "GET /api/items/{id}/market-share — 200 成功（無資料回空清單而非 404）／400 期間、地區或口徑缺漏。\n依百分比降冪排序；同一組維度若有多個來源，各來源各自成為一筆。\nperiodType / periodValue / region / metric 四個維度皆必填。",
+      "method": "GET",
+      "body": {},
+      "parameters": [
+        {
+          "id": "pair_ms_period_type",
+          "name": "periodType",
+          "value": "YEAR",
+          "description": "YEAR / QUARTER",
+          "disabled": false
+        },
+        {
+          "id": "pair_ms_period_value",
+          "name": "periodValue",
+          "value": "2024",
+          "description": "例：2024 或 2024Q3",
+          "disabled": false
+        },
+        {
+          "id": "pair_ms_region",
+          "name": "region",
+          "value": "全球",
+          "description": "地區",
+          "disabled": false
+        },
+        {
+          "id": "pair_ms_metric",
+          "name": "metric",
+          "value": "REVENUE",
+          "description": "REVENUE 營收 / VOLUME 出貨量",
+          "disabled": false
+        },
+        {
+          "id": "pair_ms_drafts",
+          "name": "includeDrafts",
+          "value": "false",
+          "description": "是否納入草稿資料",
+          "disabled": false
+        }
+      ],
+      "headers": [],
+      "authentication": {},
+      "metaSortKey": -200,
+      "isPrivate": false,
+      "settingStoreCookies": true,
+      "settingSendCookies": true,
+      "settingDisableRenderRequestBody": false,
+      "settingEncodeUrl": true,
+      "settingRebuildPath": true,
+      "settingFollowRedirects": "global",
+      "_type": "request"
+    },
+
+    {
+      "_id": "fld_company",
+      "parentId": "wrk_industrymap",
+      "modified": 1753500000000,
+      "created": 1753500000000,
+      "name": "02 Company 公司",
+      "description": "CompanyController：/api/companies。路徑識別用公司代號，未上市公司則用正規化名稱，兩者都不是內部自增主鍵。",
+      "environment": {},
+      "environmentPropertyOrder": null,
+      "metaSortKey": -900,
+      "_type": "request_group"
+    },
+    {
+      "_id": "req_company_create",
+      "parentId": "fld_company",
+      "modified": 1753500000000,
+      "created": 1753500000000,
+      "url": "{{ _.baseUrl }}/api/companies",
+      "name": "建立公司",
+      "description": "POST /api/companies — 201 建立成功／400 欄位驗證失敗／409 正規化名稱已存在。\n未上市公司可不帶任何識別碼直接建立（publicCompany=false）。回傳的 data.id 請填進環境變數 companyId。",
+      "method": "POST",
+      "body": {
+        "mimeType": "application/json",
+        "text": "{\n  \"displayName\": \"台積電\",\n  \"country\": \"TW\",\n  \"publicCompany\": true,\n  \"provenance\": {\n    \"sourceType\": \"EXTERNAL\",\n    \"sourceDetail\": \"公開資訊觀測站\"\n  }\n}"
+      },
+      "parameters": [],
+      "headers": [
+        {
+          "id": "pair_h_company_create",
+          "name": "Content-Type",
+          "value": "application/json"
+        }
+      ],
+      "authentication": {},
+      "metaSortKey": -1000,
+      "isPrivate": false,
+      "settingStoreCookies": true,
+      "settingSendCookies": true,
+      "settingDisableRenderRequestBody": false,
+      "settingEncodeUrl": true,
+      "settingRebuildPath": true,
+      "settingFollowRedirects": "global",
+      "_type": "request"
+    },
+    {
+      "_id": "req_company_identifier",
+      "parentId": "fld_company",
+      "modified": 1753500000000,
+      "created": 1753500000000,
+      "url": "{{ _.baseUrl }}/api/companies/台積電/identifiers",
+      "name": "登記公司識別碼",
+      "description": "POST /api/companies/{code}/identifiers — 201 建立成功／404 查無此公司／409 識別碼已被登記或該公司已有主要識別碼。\n注意：公司剛建立時還沒有代號，這時 {code} 要放正規化後的公司名稱（本例為「台積電」）；登記完成後才能改用 {{ _.companyCode }} 走代號。\nidentifierType 可用值：TWSE / TPEX / TSE / NASDAQ / NYSE / TAX_ID / DUNS / OTHER。",
+      "method": "POST",
+      "body": {
+        "mimeType": "application/json",
+        "text": "{\n  \"identifierType\": \"TWSE\",\n  \"identifierValue\": \"2330\",\n  \"primary\": true,\n  \"provenance\": {\n    \"sourceType\": \"EXTERNAL\",\n    \"sourceDetail\": \"TWSE 上市公司清單\"\n  }\n}"
+      },
+      "parameters": [],
+      "headers": [
+        {
+          "id": "pair_h_company_identifier",
+          "name": "Content-Type",
+          "value": "application/json"
+        }
+      ],
+      "authentication": {},
+      "metaSortKey": -900,
+      "isPrivate": false,
+      "settingStoreCookies": true,
+      "settingSendCookies": true,
+      "settingDisableRenderRequestBody": false,
+      "settingEncodeUrl": true,
+      "settingRebuildPath": true,
+      "settingFollowRedirects": "global",
+      "_type": "request"
+    },
+    {
+      "_id": "req_company_get",
+      "parentId": "fld_company",
+      "modified": 1753500000000,
+      "created": 1753500000000,
+      "url": "{{ _.baseUrl }}/api/companies/{{ _.companyCode }}",
+      "name": "依代號取得公司",
+      "description": "GET /api/companies/{code} — 200 成功／404 查無此代號。\n回傳公司資料與其所有識別碼。未上市公司以正規化名稱作為代號位置的識別。\n\n⚠️ 已知問題（2026-07-26 實測）：以識別碼（如 2330）查詢目前會回 500 LazyInitializationException，改填正規化公司名稱才會回 200。原因在 CompanyService.getByReference 回傳的是未初始化的 lazy proxy，詳見 ~/.claude/dev-errors/error-log.md。",
+      "method": "GET",
+      "body": {},
+      "parameters": [],
+      "headers": [],
+      "authentication": {},
+      "metaSortKey": -800,
+      "isPrivate": false,
+      "settingStoreCookies": true,
+      "settingSendCookies": true,
+      "settingDisableRenderRequestBody": false,
+      "settingEncodeUrl": true,
+      "settingRebuildPath": true,
+      "settingFollowRedirects": "global",
+      "_type": "request"
+    },
+    {
+      "_id": "req_company_alias",
+      "parentId": "fld_company",
+      "modified": 1753500000000,
+      "created": 1753500000000,
+      "url": "{{ _.baseUrl }}/api/companies/{{ _.companyCode }}/aliases",
+      "name": "登記公司別名",
+      "description": "POST /api/companies/{code}/aliases — 201 建立成功／404 查無此公司／409 別名與其他公司名稱或既有別名衝突。",
+      "method": "POST",
+      "body": {
+        "mimeType": "application/json",
+        "text": "{\n  \"alias\": \"TSMC\",\n  \"provenance\": {\n    \"sourceType\": \"MANUAL\",\n    \"sourceDetail\": \"人工建檔\"\n  }\n}"
+      },
+      "parameters": [],
+      "headers": [
+        {
+          "id": "pair_h_company_alias",
+          "name": "Content-Type",
+          "value": "application/json"
+        }
+      ],
+      "authentication": {},
+      "metaSortKey": -700,
+      "isPrivate": false,
+      "settingStoreCookies": true,
+      "settingSendCookies": true,
+      "settingDisableRenderRequestBody": false,
+      "settingEncodeUrl": true,
+      "settingRebuildPath": true,
+      "settingFollowRedirects": "global",
+      "_type": "request"
+    },
+
+    {
+      "_id": "fld_product",
+      "parentId": "wrk_industrymap",
+      "modified": 1753500000000,
+      "created": 1753500000000,
+      "name": "03 Product 產品組成",
+      "description": "ProductController：/api/products。產品與零件在資料模型上是同一種實體，這裡的路徑只是使用者視角的入口。",
+      "environment": {},
+      "environmentPropertyOrder": null,
+      "metaSortKey": -800,
+      "_type": "request_group"
+    },
+    {
+      "_id": "req_product_components",
+      "parentId": "fld_product",
+      "modified": 1753500000000,
+      "created": 1753500000000,
+      "url": "{{ _.baseUrl }}/api/products/{{ _.productId }}/components",
+      "name": "展開產品組成樹",
+      "description": "GET /api/products/{id}/components — 200 成功／400 查詢條件驗證失敗／404 查無此節點。\n沿 part-of 關係展開指定層數；不含 is-a 細分類型。depth 範圍 1–5（上限存在是為了避免一次拉出整張圖）。\nnecessity 可省略表示全取：STANDARD / COMMON / OPTIONAL。",
+      "method": "GET",
+      "body": {},
+      "parameters": [
+        {
+          "id": "pair_tree_depth",
+          "name": "depth",
+          "value": "3",
+          "description": "展開層數 1–5",
+          "disabled": false
+        },
+        {
+          "id": "pair_tree_necessity",
+          "name": "necessity",
+          "value": "STANDARD",
+          "description": "STANDARD / COMMON / OPTIONAL；停用此參數表示全取",
+          "disabled": true
+        },
+        {
+          "id": "pair_tree_drafts",
+          "name": "includeDrafts",
+          "value": "false",
+          "description": "是否納入草稿資料",
+          "disabled": false
+        }
+      ],
+      "headers": [],
+      "authentication": {},
+      "metaSortKey": -1000,
+      "isPrivate": false,
+      "settingStoreCookies": true,
+      "settingSendCookies": true,
+      "settingDisableRenderRequestBody": false,
+      "settingEncodeUrl": true,
+      "settingRebuildPath": true,
+      "settingFollowRedirects": "global",
+      "_type": "request"
+    },
+
+    {
+      "_id": "fld_supply",
+      "parentId": "wrk_industrymap",
+      "modified": 1753500000000,
+      "created": 1753500000000,
+      "name": "04 SupplyRelation 供應關係寫入",
+      "description": "SupplyRelationController：/api/supply-relations。只有寫入端點，查詢端點掛在零件底下（01 Item 資料夾）。",
+      "environment": {},
+      "environmentPropertyOrder": null,
+      "metaSortKey": -700,
+      "_type": "request_group"
+    },
+    {
+      "_id": "req_supply_role",
+      "parentId": "fld_supply",
+      "modified": 1753500000000,
+      "created": 1753500000000,
+      "url": "{{ _.baseUrl }}/api/supply-relations/roles",
+      "name": "建立公司與零件的供應關係",
+      "description": "POST /api/supply-relations/roles — 201 建立成功／400 欄位驗證失敗／404 查無公司或零件／409 同組公司零件角色已存在。\n同一組公司零件可有多個角色（設計、製造、封測），同角色重複才算衝突。\ncompanyRole 可用值：DESIGN / MANUFACTURE / ASSEMBLY / BRAND / PACKAGING_TESTING。\n\n⚠️ 已知問題（2026-07-26 實測）：companyId 是內部自增主鍵，但公司端點的回應一律不含 id，目前無法從 API 取得此值，這支端點因而打不通（會回 400）。暫時解法是直接查資料庫取得 company.id 填入環境變數 companyId。",
+      "method": "POST",
+      "body": {
+        "mimeType": "application/json",
+        "text": "{\n  \"companyId\": {{ _.companyId }},\n  \"itemId\": {{ _.childItemId }},\n  \"companyRole\": \"MANUFACTURE\",\n  \"provenance\": {\n    \"sourceType\": \"AI_GENERATED\",\n    \"sourceDetail\": \"claude-opus-5\",\n    \"confidence\": 0.75\n  }\n}"
+      },
+      "parameters": [],
+      "headers": [
+        {
+          "id": "pair_h_supply_role",
+          "name": "Content-Type",
+          "value": "application/json"
+        }
+      ],
+      "authentication": {},
+      "metaSortKey": -1000,
+      "isPrivate": false,
+      "settingStoreCookies": true,
+      "settingSendCookies": true,
+      "settingDisableRenderRequestBody": false,
+      "settingEncodeUrl": true,
+      "settingRebuildPath": true,
+      "settingFollowRedirects": "global",
+      "_type": "request"
+    },
+    {
+      "_id": "req_supply_market_share",
+      "parentId": "fld_supply",
+      "modified": 1753500000000,
+      "created": 1753500000000,
+      "url": "{{ _.baseUrl }}/api/supply-relations/market-shares",
+      "name": "寫入市佔率",
+      "description": "POST /api/supply-relations/market-shares — 201 建立成功／400 維度缺漏或百分比超出 0–100／404 查無公司或零件／409 同一來源已寫過相同維度。\n期間、地區、口徑為必填；不同來源對同一組維度的不同數值可並存。\n市佔率可在尚未建立供應關係時先行寫入。",
+      "method": "POST",
+      "body": {
+        "mimeType": "application/json",
+        "text": "{\n  \"companyId\": {{ _.companyId }},\n  \"itemId\": {{ _.childItemId }},\n  \"periodType\": \"YEAR\",\n  \"periodValue\": \"2024\",\n  \"region\": \"全球\",\n  \"metric\": \"REVENUE\",\n  \"sharePercent\": 70.5,\n  \"provenance\": {\n    \"sourceType\": \"EXTERNAL\",\n    \"sourceDetail\": \"TrendForce 2024 年度報告\",\n    \"confidence\": 0.9\n  }\n}"
+      },
+      "parameters": [],
+      "headers": [
+        {
+          "id": "pair_h_supply_ms",
+          "name": "Content-Type",
+          "value": "application/json"
+        }
+      ],
+      "authentication": {},
+      "metaSortKey": -900,
+      "isPrivate": false,
+      "settingStoreCookies": true,
+      "settingSendCookies": true,
+      "settingDisableRenderRequestBody": false,
+      "settingEncodeUrl": true,
+      "settingRebuildPath": true,
+      "settingFollowRedirects": "global",
+      "_type": "request"
+    },
+
+    {
+      "_id": "fld_errors",
+      "parentId": "wrk_industrymap",
+      "modified": 1753500000000,
+      "created": 1753500000000,
+      "name": "05 錯誤情境驗證",
+      "description": "驗證 GlobalExceptionHandler 與 api-design.md 的狀態碼語意是否符合預期。",
+      "environment": {},
+      "environmentPropertyOrder": null,
+      "metaSortKey": -600,
+      "_type": "request_group"
+    },
+    {
+      "_id": "req_err_400_confidence",
+      "parentId": "fld_errors",
+      "modified": 1753500000000,
+      "created": 1753500000000,
+      "url": "{{ _.baseUrl }}/api/items",
+      "name": "400 — AI_GENERATED 未帶信心度",
+      "description": "預期 400：ProvenanceRequest 的 @AssertTrue 規定來源類型為 AI_GENERATED 時必須提供 confidence。",
+      "method": "POST",
+      "body": {
+        "mimeType": "application/json",
+        "text": "{\n  \"displayName\": \"測試用零件-無信心度\",\n  \"endProduct\": false,\n  \"provenance\": {\n    \"sourceType\": \"AI_GENERATED\",\n    \"sourceDetail\": \"claude-opus-5\"\n  }\n}"
+      },
+      "parameters": [],
+      "headers": [
+        {
+          "id": "pair_h_err_conf",
+          "name": "Content-Type",
+          "value": "application/json"
+        }
+      ],
+      "authentication": {},
+      "metaSortKey": -1000,
+      "isPrivate": false,
+      "settingStoreCookies": true,
+      "settingSendCookies": true,
+      "settingDisableRenderRequestBody": false,
+      "settingEncodeUrl": true,
+      "settingRebuildPath": true,
+      "settingFollowRedirects": "global",
+      "_type": "request"
+    },
+    {
+      "_id": "req_err_400_depth",
+      "parentId": "fld_errors",
+      "modified": 1753500000000,
+      "created": 1753500000000,
+      "url": "{{ _.baseUrl }}/api/products/{{ _.productId }}/components",
+      "name": "400 — 組成樹深度超過上限",
+      "description": "預期 400：ComponentTreeQuery 限制 depth 介於 1–5。",
+      "method": "GET",
+      "body": {},
+      "parameters": [
+        {
+          "id": "pair_err_depth",
+          "name": "depth",
+          "value": "9",
+          "description": "超過上限 5",
+          "disabled": false
+        }
+      ],
+      "headers": [],
+      "authentication": {},
+      "metaSortKey": -900,
+      "isPrivate": false,
+      "settingStoreCookies": true,
+      "settingSendCookies": true,
+      "settingDisableRenderRequestBody": false,
+      "settingEncodeUrl": true,
+      "settingRebuildPath": true,
+      "settingFollowRedirects": "global",
+      "_type": "request"
+    },
+    {
+      "_id": "req_err_400_market_share",
+      "parentId": "fld_errors",
+      "modified": 1753500000000,
+      "created": 1753500000000,
+      "url": "{{ _.baseUrl }}/api/items/{{ _.childItemId }}/market-share",
+      "name": "400 — 市佔率查詢缺少地區",
+      "description": "預期 400：MarketShareQuery 的 region 為必填，期間、地區、口徑缺一排名就沒有意義。",
+      "method": "GET",
+      "body": {},
+      "parameters": [
+        {
+          "id": "pair_err_ms_period_type",
+          "name": "periodType",
+          "value": "YEAR",
+          "disabled": false
+        },
+        {
+          "id": "pair_err_ms_period_value",
+          "name": "periodValue",
+          "value": "2024",
+          "disabled": false
+        },
+        {
+          "id": "pair_err_ms_metric",
+          "name": "metric",
+          "value": "REVENUE",
+          "disabled": false
+        }
+      ],
+      "headers": [],
+      "authentication": {},
+      "metaSortKey": -800,
+      "isPrivate": false,
+      "settingStoreCookies": true,
+      "settingSendCookies": true,
+      "settingDisableRenderRequestBody": false,
+      "settingEncodeUrl": true,
+      "settingRebuildPath": true,
+      "settingFollowRedirects": "global",
+      "_type": "request"
+    },
+    {
+      "_id": "req_err_404_company",
+      "parentId": "fld_errors",
+      "modified": 1753500000000,
+      "created": 1753500000000,
+      "url": "{{ _.baseUrl }}/api/companies/0000000",
+      "name": "404 — 查無此公司代號",
+      "description": "預期 404：代號與正規化名稱皆查無。",
+      "method": "GET",
+      "body": {},
+      "parameters": [],
+      "headers": [],
+      "authentication": {},
+      "metaSortKey": -700,
+      "isPrivate": false,
+      "settingStoreCookies": true,
+      "settingSendCookies": true,
+      "settingDisableRenderRequestBody": false,
+      "settingEncodeUrl": true,
+      "settingRebuildPath": true,
+      "settingFollowRedirects": "global",
+      "_type": "request"
+    },
+    {
+      "_id": "req_err_409_duplicate",
+      "parentId": "fld_errors",
+      "modified": 1753500000000,
+      "created": 1753500000000,
+      "url": "{{ _.baseUrl }}/api/items",
+      "name": "409 — 正規化名稱重複",
+      "description": "預期 409：連打兩次即衝突。也可用來驗證正規化行為——「腳踏車」與「腳踏車 」（含空白）應視為同一名稱。",
+      "method": "POST",
+      "body": {
+        "mimeType": "application/json",
+        "text": "{\n  \"displayName\": \"腳踏車\",\n  \"endProduct\": true,\n  \"provenance\": {\n    \"sourceType\": \"MANUAL\",\n    \"sourceDetail\": \"人工建檔\"\n  }\n}"
+      },
+      "parameters": [],
+      "headers": [
+        {
+          "id": "pair_h_err_dup",
+          "name": "Content-Type",
+          "value": "application/json"
+        }
+      ],
+      "authentication": {},
+      "metaSortKey": -600,
+      "isPrivate": false,
+      "settingStoreCookies": true,
+      "settingSendCookies": true,
+      "settingDisableRenderRequestBody": false,
+      "settingEncodeUrl": true,
+      "settingRebuildPath": true,
+      "settingFollowRedirects": "global",
+      "_type": "request"
+    },
+    {
+      "_id": "req_err_409_cycle",
+      "parentId": "fld_errors",
+      "modified": 1753500000000,
+      "created": 1753500000000,
+      "url": "{{ _.baseUrl }}/api/items/{{ _.childItemId }}/components",
+      "name": "409 — 組成關係造成循環",
+      "description": "預期 409：先建立 itemId → childItemId 後，再建立 childItemId → itemId 會形成循環，service 層應拒絕。",
+      "method": "POST",
+      "body": {
+        "mimeType": "application/json",
+        "text": "{\n  \"childItemId\": {{ _.itemId }},\n  \"necessity\": \"STANDARD\",\n  \"provenance\": {\n    \"sourceType\": \"MANUAL\",\n    \"sourceDetail\": \"循環偵測測試\"\n  }\n}"
+      },
+      "parameters": [],
+      "headers": [
+        {
+          "id": "pair_h_err_cycle",
+          "name": "Content-Type",
+          "value": "application/json"
+        }
+      ],
+      "authentication": {},
+      "metaSortKey": -500,
+      "isPrivate": false,
+      "settingStoreCookies": true,
+      "settingSendCookies": true,
+      "settingDisableRenderRequestBody": false,
+      "settingEncodeUrl": true,
+      "settingRebuildPath": true,
+      "settingFollowRedirects": "global",
+      "_type": "request"
+    },
+
+    {
+      "_id": "fld_docs",
+      "parentId": "wrk_industrymap",
+      "modified": 1753500000000,
+      "created": 1753500000000,
+      "name": "06 文件",
+      "description": "springdoc 端點。/api-docs 的 JSON 可直接在 Insomnia 用 Import 匯入，端點異動後重匯即可同步。",
+      "environment": {},
+      "environmentPropertyOrder": null,
+      "metaSortKey": -500,
+      "_type": "request_group"
+    },
+    {
+      "_id": "req_openapi",
+      "parentId": "fld_docs",
+      "modified": 1753500000000,
+      "created": 1753500000000,
+      "url": "{{ _.baseUrl }}/api-docs",
+      "name": "OpenAPI JSON",
+      "description": "springdoc.api-docs.path=/api-docs。日後端點有增減時，直接在 Insomnia 用 Import → From URL 匯入這個網址，就能重新產生整份 collection。",
+      "method": "GET",
+      "body": {},
+      "parameters": [],
+      "headers": [],
+      "authentication": {},
+      "metaSortKey": -1000,
+      "isPrivate": false,
+      "settingStoreCookies": true,
+      "settingSendCookies": true,
+      "settingDisableRenderRequestBody": false,
+      "settingEncodeUrl": true,
+      "settingRebuildPath": true,
+      "settingFollowRedirects": "global",
+      "_type": "request"
+    }
+  ]
+}

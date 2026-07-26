@@ -1,0 +1,58 @@
+# API Design Guidelines（API 設計規範）
+
+本文件以 `ais-backend` 的既有慣例為基礎，套用到 `industrymap` 的產業地圖領域。
+目標：API 內部一致，不強套教科書式 REST。
+
+## 核心原則
+
+- 成功回應統一 `ResponseEntity<ServerResponse<T>>`；錯誤統一 `ServerException` + OpenAPI 註解。
+- 長時間任務、批次處理允許動作式路徑（`/sync`、`/refresh`、`/scan`、`/status` 等）。
+- `DELETE` 可視需要帶 request body 做批次刪除。
+
+## Base Path（規劃）
+
+**開發順序對齊「主軸先行」**：先做 `/api/products` 與 `/api/companies` 核心地圖查詢，
+`news` / `patents` / `stock-price` 這幾個子資源屬於後期擴充，路徑先預留規劃即可。
+
+| 前綴 | 優先度 | 用途 | 範例 |
+|------|--------|------|------|
+| `/api/products/...` | 第一階段 | 產品 / BOM 拆解 | `/api/products/{id}/components` |
+| `/api/companies/...` | 第一階段 | 公司基本資料（含代號、對應零組件） | `/api/companies/{code}` |
+| `/api/companies/{code}/news`、`/patents`、`/stock-price` | 後期 | 公司情資子資源 | `/api/companies/{code}/stock-price` |
+| `/api/internal/...` | 後期 | 內部服務間（如 job 觸發、健康檢查） | `/api/internal/market-sync/trigger` |
+| `/api/public/...` | 視需求 | 對外公開查詢 | `/api/public/industry-map/{productId}` |
+
+## URL 命名
+
+- 一律 kebab-case、資源導向：`stock-price`、`patent`、`news-item`。
+- 巢狀深度原則 2 層內；例如 `/api/companies/{code}/patents` 可以，避免再往下巢狀第三層。
+- 公司以**公司代號**（股票代號 / 統一編號）作為路徑識別，不用內部自增 id 曝露於外部 API。
+
+## Status Code（專案語意）
+
+- `404`：查無此公司代號 / 產品 / 零組件。
+- `409`：任務重入、外部同步任務狀態衝突。
+- `503`：外部股價 / 新聞 / 專利來源不可用（含逾時）。
+- 其餘依標準語意；`201` 用於明確建立新資源或觸發新的同步任務。
+
+## Response 格式
+
+- 一般 JSON API：`ResponseEntity<ServerResponse<T>>`，不自行發明另一套包裝。
+- 錯誤：拋 `ServerException` + `HttpStatus`；訊息需標明是「內部資料查無」還是「外部來源失敗」，
+  兩者對前端呈現方式不同（前者是空狀態、後者是「資料可能非最新，稍後再試」）。
+
+## 非同步任務
+
+- 呼叫外部股價 / 新聞 / 專利來源的流程一律走 job / queue（`job/producer` → `job/consumer`）。
+- 觸發同步後回傳可追蹤的 job / task id，不同步等待整體完成；查詢結果走既有快取資料 + 最後更新時間戳。
+- 每筆外部資料（股價、新聞、專利）需記錄「最後成功同步時間」，供前端顯示資料新鮮度。
+
+## 參數與驗證
+
+- Request body 用 DTO / Payload，加 `@Valid` + `jakarta.validation`。
+- 日期 / 時間欄位一律 ISO 8601；股價數值需明確幣別（如 `TWD`）。
+
+## OpenAPI
+
+- 對外 API 補 `@Tag`、`@Operation`、`@ApiResponses`；DTO 欄位補 `@Schema`。
+- Swagger 與實際回傳不一致時，以實際為準並修正註解。
