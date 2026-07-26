@@ -54,12 +54,12 @@ PostgreSQL / RabbitMQ（或等效 queue）/ Redis（快取）/ 外部資料來�
 
 | Package | 職責 |
 |---------|------|
-| `controller` ★ | REST API 入口，`@Valid` 驗證，回 `ServerResponse<T>`；`ProductController`、`ItemController`、`CompanyController`、`SupplyRelationController` |
+| `controller` ★ | REST API 入口，`@Valid` 驗證，回 `ServerResponse<T>`；`ProductController`、`ItemController`、`CompanyController`、`SupplyRelationController`、`ReviewController` |
 | `service` ★ | 業務邏輯，依領域切分：`service.item`、`service.company`、`service.supply`、`service.review`。**單一 service 上限 500 行，超過就拆** |
 | `repository` ★ | Spring Data JPA 資料存取。**SQL 一律寫在這層，service 只呼叫；手寫查詢用 `@Query(nativeQuery = true)`，enum 以字串傳入** |
 | `model` ★ | JPA Entity（`Item`、`ItemAlias`、`ItemComposition`、`Company`、`CompanyAlias`、`CompanyIdentifier`、`CompanyItemRole`、`MarketShare`、`ProvenanceEntity`） |
-| `payloads` ★ | API request / response 契約（複數，對齊 `ais-backend` 慣例）；依領域分 `payloads.item`、`payloads.company`、`payloads.supply`。含 `ServerResponses` 這層 `ResponseEntity` 包裝，讓 controller 不重複樣板 |
-| `enums` ★ | `SourceType`、`ReviewStatus`、`CompanyRole`、`Necessity`、`IdentifierType`、`ShareMetric`、`PeriodType` |
+| `payloads` ★ | API request / response 契約（複數，對齊 `ais-backend` 慣例）；依領域分 `payloads.item`、`payloads.company`、`payloads.supply`、`payloads.review`。含 `ServerResponses` 這層 `ResponseEntity` 包裝，讓 controller 不重複樣板 |
+| `enums` ★ | `SourceType`、`ReviewStatus`、`ReviewTargetType`、`CompanyRole`、`Necessity`、`IdentifierType`、`ShareMetric`、`PeriodType` |
 | `helper` ★ | `ProvenanceValidator`（來源欄位共用驗證）、`ReviewScopes`（查詢的審核範圍） |
 | `util` ★ | `NameNormalizer`（名稱正規化，無外部相依） |
 | `clients` | 外部資料來源封裝：股價行情 API、新聞來源 API、專利檢索（如智慧財產局 / Google Patents）、公司登記 / 公開資訊觀測站 API |

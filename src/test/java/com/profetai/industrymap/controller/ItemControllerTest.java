@@ -118,7 +118,7 @@ class ItemControllerTest {
     @Test
     @DisplayName("查無品類節點時應回傳 404")
     void getItem_unknownId_shouldReturnNotFound() throws Exception {
-        when(itemService.getById(99L)).thenThrow(new ServerException("查無此品類節點", HttpStatus.NOT_FOUND));
+        when(itemService.getVisibleById(99L)).thenThrow(new ServerException("查無此品類節點", HttpStatus.NOT_FOUND));
 
         mockMvc.perform(get("/api/items/99"))
                 .andExpect(status().isNotFound())
@@ -128,7 +128,7 @@ class ItemControllerTest {
     @Test
     @DisplayName("以名稱解析節點但名稱與別名皆查無時應回傳 404")
     void resolveByName_noMatch_shouldReturnNotFound() throws Exception {
-        when(itemService.resolveByName("不存在")).thenReturn(Optional.empty());
+        when(itemService.resolveVisibleByName("不存在")).thenReturn(Optional.empty());
 
         mockMvc.perform(get("/api/items").param("name", "不存在"))
                 .andExpect(status().isNotFound());

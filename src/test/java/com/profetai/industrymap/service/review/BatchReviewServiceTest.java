@@ -1,0 +1,154 @@
+package com.profetai.industrymap.service.review;
+
+import com.profetai.industrymap.enums.ReviewStatus;
+import com.profetai.industrymap.enums.ReviewTargetType;
+import com.profetai.industrymap.exceptions.ServerException;
+import com.profetai.industrymap.payloads.review.BatchReviewRequest;
+import com.profetai.industrymap.payloads.review.ReviewResultResponse;
+import com.profetai.industrymap.payloads.review.ReviewTarget;
+import org.junit.jupiter.api.DisplayName;
+import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.extension.ExtendWith;
+import org.mockito.InjectMocks;
+import org.mockito.Mock;
+import org.mockito.junit.jupiter.MockitoExtension;
+import org.springframework.dao.CannotAcquireLockException;
+import org.springframework.http.HttpStatus;
+
+import java.util.List;
+
+import static org.junit.jupiter.api.Assertions.assertAll;
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.when;
+
+@ExtendWith(MockitoExtension.class)
+class BatchReviewServiceTest {
+
+    private static final String REVIEWER = "reviewer@profetai";
+
+    @Mock
+    private ReviewApplyService reviewApplyService;
+
+    @InjectMocks
+    private BatchReviewService batchReviewService;
+
+    @Test
+    @DisplayName("批次全部有效時應逐筆回報成功")
+    void applyBatch_allValid_shouldReportEverySuccess() {
+        // Given
+        givenApplySucceeds(ReviewTargetType.ITEM, 1L);
+        givenApplySucceeds(ReviewTargetType.ITEM, 2L);
+
+        // When
+        List<ReviewResultResponse> results = batchReviewService.applyBatch(batchRequest(
+                ReviewTarget.builder().targetType(ReviewTargetType.ITEM).targetId(1L).build(),
+                ReviewTarget.builder().targetType(ReviewTargetType.ITEM).targetId(2L).build()));
+
+        // Then
+        assertAll(
+                () -> assertEquals(2, results.size()),
+                () -> assertTrue(results.stream().allMatch(ReviewResultResponse::isSuccess)),
+                () -> assertTrue(results.stream()
+                        .allMatch(result -> result.getReviewStatus() == ReviewStatus.VERIFIED)));
+    }
+
+    @Test
+    @DisplayName("批次中一筆查無目標時其餘仍完成審核，該筆標示失敗與原因")
+    void applyBatch_oneTargetMissing_shouldReviewOthersAndReportFailure() {
+        // Given：第二筆查無目標，第一與第三筆有效
+        givenApplySucceeds(ReviewTargetType.ITEM, 1L);
+        when(reviewApplyService.apply(ReviewTargetType.ITEM, 404L, ReviewStatus.VERIFIED, REVIEWER))
+                .thenThrow(new ServerException("查無此審核目標：ITEM 404", HttpStatus.NOT_FOUND));
+        givenApplySucceeds(ReviewTargetType.MARKET_SHARE, 3L);
+
+        // When
+        List<ReviewResultResponse> results = batchReviewService.applyBatch(batchRequest(
+                ReviewTarget.builder().targetType(ReviewTargetType.ITEM).targetId(1L).build(),
+                ReviewTarget.builder().targetType(ReviewTargetType.ITEM).targetId(404L).build(),
+                ReviewTarget.builder().targetType(ReviewTargetType.MARKET_SHARE).targetId(3L).build()));
+
+        // Then：失敗的一筆不影響其餘兩筆（design D2，未整批 rollback）
+        assertAll(
+                () -> assertEquals(3, results.size()),
+                () -> assertTrue(results.get(0).isSuccess()),
+                () -> assertFalse(results.get(1).isSuccess()),
+                () -> assertNotNull(results.get(1).getMessage()),
+                () -> assertEquals(404L, results.get(1).getTargetId()),
+                () -> assertTrue(results.get(2).isSuccess()),
+                () -> verify(reviewApplyService)
+                        .apply(ReviewTargetType.MARKET_SHARE, 3L, ReviewStatus.VERIFIED, REVIEWER));
+    }
+
+    @Test
+    @DisplayName("批次可跨不同目標類型，各筆分別套用審核")
+    void applyBatch_mixedTargetTypes_shouldReviewEachType() {
+        givenApplySucceeds(ReviewTargetType.ITEM_COMPOSITION, 5L);
+        givenApplySucceeds(ReviewTargetType.COMPANY_ITEM_ROLE, 6L);
+        givenApplySucceeds(ReviewTargetType.MARKET_SHARE, 7L);
+
+        List<ReviewResultResponse> results = batchReviewService.applyBatch(batchRequest(
+                ReviewTarget.builder().targetType(ReviewTargetType.ITEM_COMPOSITION).targetId(5L).build(),
+                ReviewTarget.builder().targetType(ReviewTargetType.COMPANY_ITEM_ROLE).targetId(6L).build(),
+                ReviewTarget.builder().targetType(ReviewTargetType.MARKET_SHARE).targetId(7L).build()));
+
+        assertAll(
+                () -> assertEquals(3, results.size()),
+                () -> assertTrue(results.stream().allMatch(ReviewResultResponse::isSuccess)),
+                () -> verify(reviewApplyService)
+                        .apply(ReviewTargetType.ITEM_COMPOSITION, 5L, ReviewStatus.VERIFIED, REVIEWER),
+                () -> verify(reviewApplyService)
+                        .apply(ReviewTargetType.COMPANY_ITEM_ROLE, 6L, ReviewStatus.VERIFIED, REVIEWER),
+                () -> verify(reviewApplyService)
+                        .apply(ReviewTargetType.MARKET_SHARE, 7L, ReviewStatus.VERIFIED, REVIEWER));
+    }
+
+    @Test
+    @DisplayName("單筆拋出非業務例外時不得中斷整批，其餘仍完成且該筆標示失敗")
+    void applyBatch_unexpectedException_shouldNotAbortRemainingTargets() {
+        // Given：commit 期的鎖競爭等失敗拋的不是 ServerException，
+        // 若只攔 ServerException 會讓其餘項目全部不處理，呼叫端也拿不到逐筆結果
+        givenApplySucceeds(ReviewTargetType.ITEM, 1L);
+        when(reviewApplyService.apply(ReviewTargetType.ITEM, 2L, ReviewStatus.VERIFIED, REVIEWER))
+                .thenThrow(new CannotAcquireLockException("could not obtain lock on row"));
+        givenApplySucceeds(ReviewTargetType.MARKET_SHARE, 3L);
+
+        // When
+        List<ReviewResultResponse> results = batchReviewService.applyBatch(batchRequest(
+                ReviewTarget.builder().targetType(ReviewTargetType.ITEM).targetId(1L).build(),
+                ReviewTarget.builder().targetType(ReviewTargetType.ITEM).targetId(2L).build(),
+                ReviewTarget.builder().targetType(ReviewTargetType.MARKET_SHARE).targetId(3L).build()));
+
+        // Then
+        assertAll(
+                () -> assertEquals(3, results.size()),
+                () -> assertTrue(results.get(0).isSuccess()),
+                () -> assertFalse(results.get(1).isSuccess()),
+                () -> assertNotNull(results.get(1).getMessage()),
+                () -> assertTrue(results.get(2).isSuccess()),
+                () -> verify(reviewApplyService)
+                        .apply(ReviewTargetType.MARKET_SHARE, 3L, ReviewStatus.VERIFIED, REVIEWER));
+    }
+
+    private void givenApplySucceeds(ReviewTargetType targetType, Long targetId) {
+        when(reviewApplyService.apply(targetType, targetId, ReviewStatus.VERIFIED, REVIEWER))
+                .thenReturn(ReviewResultResponse.builder()
+                        .targetType(targetType)
+                        .targetId(targetId)
+                        .success(true)
+                        .reviewStatus(ReviewStatus.VERIFIED)
+                        .reviewedBy(REVIEWER)
+                        .build());
+    }
+
+    private BatchReviewRequest batchRequest(ReviewTarget... targets) {
+        return BatchReviewRequest.builder()
+                .targets(List.of(targets))
+                .targetStatus(ReviewStatus.VERIFIED)
+                .reviewer(REVIEWER)
+                .build();
+    }
+}

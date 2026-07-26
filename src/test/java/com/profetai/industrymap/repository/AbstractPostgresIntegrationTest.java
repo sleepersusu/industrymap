@@ -22,6 +22,15 @@ import org.testcontainers.containers.PostgreSQLContainer;
 @AutoConfigureTestDatabase(replace = AutoConfigureTestDatabase.Replace.NONE)
 public abstract class AbstractPostgresIntegrationTest {
 
+    /**
+     * 測試資料的名稱前綴。
+     *
+     * <p>沒有 Docker 時整合測試跑在共用的本機開發資料庫上，而 item / company 的正規化名稱是全域唯一鍵——
+     * fixture 若直接用「腳踏車」「shimano」這種真實名稱，只要開發資料庫裡剛好有同名資料，
+     * 測試就會撞唯一鍵而失敗（這正是種子資料走查後踩到的）。前綴讓 fixture 不可能與真實資料重疊。</p>
+     */
+    protected static final String FIXTURE_PREFIX = "it-";
+
     private static final PostgreSQLContainer<?> POSTGRES = startContainerIfDockerAvailable();
 
     @SuppressWarnings("resource")

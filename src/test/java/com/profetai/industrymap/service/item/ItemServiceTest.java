@@ -1,5 +1,6 @@
 package com.profetai.industrymap.service.item;
 
+import com.profetai.industrymap.enums.ReviewStatus;
 import com.profetai.industrymap.enums.SourceType;
 import com.profetai.industrymap.exceptions.ServerException;
 import com.profetai.industrymap.model.Item;
@@ -159,6 +160,37 @@ class ItemServiceTest {
                 () -> assertEquals("wifi模組", created.getNormalizedAlias()),
                 () -> assertEquals("ＷｉＦｉ模組", created.getDisplayAlias()),
                 () -> assertEquals(wifiModule, created.getItem()));
+    }
+
+    @Test
+    @DisplayName("對外取得節點時已駁回的節點應視為查無而回 404")
+    void getVisibleById_rejected_shouldThrowNotFound() {
+        Item rejected = Item.builder().id(1L).normalizedName("wifi模組").displayName("WiFi 模組")
+                .reviewStatus(ReviewStatus.REJECTED).build();
+        when(itemRepository.findById(1L)).thenReturn(Optional.of(rejected));
+
+        ServerException ex = assertThrows(ServerException.class, () -> itemService.getVisibleById(1L));
+
+        assertEquals(HttpStatus.NOT_FOUND, ex.getHttpStatus());
+    }
+
+    @Test
+    @DisplayName("對外取得節點時草稿仍應取得，草稿與已駁回的待遇不同")
+    void getVisibleById_draft_shouldReturnItem() {
+        Item draft = Item.builder().id(1L).normalizedName("wifi模組").displayName("WiFi 模組").build();
+        when(itemRepository.findById(1L)).thenReturn(Optional.of(draft));
+
+        assertEquals(draft, itemService.getVisibleById(1L));
+    }
+
+    @Test
+    @DisplayName("對外以名稱解析節點時已駁回的節點應視為查無")
+    void resolveVisibleByName_rejected_shouldReturnEmpty() {
+        Item rejected = Item.builder().id(1L).normalizedName("wifi模組").displayName("WiFi 模組")
+                .reviewStatus(ReviewStatus.REJECTED).build();
+        when(itemRepository.findByNormalizedName("wifi模組")).thenReturn(Optional.of(rejected));
+
+        assertTrue(itemService.resolveVisibleByName("WiFi 模組").isEmpty());
     }
 
     private CreateItemAliasRequest createAliasRequest(String alias) {

@@ -201,6 +201,46 @@ class ItemCompositionServiceTest {
     }
 
     @Test
+    @DisplayName("組成樹中被駁回的子節點不得出現，即使指向它的關係本身已驗證")
+    void expandTree_rejectedChildItem_shouldNotAppearInTree() {
+        // Given：A → B 的關係已驗證，但 B 這個節點本身已被駁回
+        Item rejectedB = Item.builder().id(2L).normalizedName("b").displayName("B")
+                .reviewStatus(ReviewStatus.REJECTED).build();
+        when(itemRepository.findById(1L)).thenReturn(Optional.of(itemA));
+        when(itemCompositionRepository.findByParentItemIdAndReviewStatusIn(1L, VERIFIED_ONLY))
+                .thenReturn(List.of(composition(itemA, rejectedB)));
+
+        // When
+        ComponentNode root = itemCompositionService.expandTree(1L, 2, null, false);
+
+        // Then：關係驗證過不代表節點還算數，被駁回的節點整枝不外露
+        assertTrue(root.getChildren().isEmpty());
+    }
+
+    @Test
+    @DisplayName("反向查詢時被駁回的上層節點不得列入終端成品")
+    void findReachableEndProducts_rejectedAncestor_shouldBeExcluded() {
+        // Given：PCB 掛在已駁回的「汽車」與正常的「PC」之下，兩者都是終端成品
+        Item pcb = Item.builder().id(10L).normalizedName("pcb").displayName("PCB").build();
+        Item pc = Item.builder().id(12L).normalizedName("pc").displayName("PC").isEndProduct(true).build();
+        Item rejectedCar = Item.builder().id(13L).normalizedName("汽車").displayName("汽車")
+                .isEndProduct(true).reviewStatus(ReviewStatus.REJECTED).build();
+        when(itemRepository.findById(10L)).thenReturn(Optional.of(pcb));
+        when(itemCompositionRepository.findByChildItemIdAndReviewStatusIn(10L, VERIFIED_ONLY))
+                .thenReturn(List.of(composition(pc, pcb), composition(rejectedCar, pcb)));
+        when(itemCompositionRepository.findByChildItemIdAndReviewStatusIn(12L, VERIFIED_ONLY)).thenReturn(List.of());
+
+        // When
+        List<Item> endProducts = itemCompositionService.findReachableEndProducts(10L, false);
+
+        // Then
+        assertAll(
+                () -> assertEquals(List.of(pc), endProducts),
+                () -> verify(itemCompositionRepository, never())
+                        .findByChildItemIdAndReviewStatusIn(13L, VERIFIED_ONLY));
+    }
+
+    @Test
     @DisplayName("反向查詢不存在的節點應拋出 404 ServerException")
     void findReachableEndProducts_unknownItem_shouldThrowNotFound() {
         when(itemRepository.findById(99L)).thenReturn(Optional.empty());

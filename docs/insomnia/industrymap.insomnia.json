@@ -25,8 +25,10 @@
         "productId": "1",
         "itemId": "1",
         "childItemId": "2",
-        "companyId": "1",
-        "companyCode": "2330"
+        "companyCode": "2330",
+        "supplierCompanyCode": "5306",
+        "reviewer": "sleepersusu",
+        "compositionId": "1"
       },
       "dataPropertyOrder": {
         "&": [
@@ -34,8 +36,10 @@
           "productId",
           "itemId",
           "childItemId",
-          "companyId",
-          "companyCode"
+          "companyCode",
+          "supplierCompanyCode",
+          "reviewer",
+          "compositionId"
         ]
       },
       "color": null,
@@ -62,7 +66,6 @@
       "metaSortKey": 1753500000000,
       "_type": "environment"
     },
-
     {
       "_id": "fld_item",
       "parentId": "wrk_industrymap",
@@ -385,7 +388,6 @@
       "settingFollowRedirects": "global",
       "_type": "request"
     },
-
     {
       "_id": "fld_company",
       "parentId": "wrk_industrymap",
@@ -517,7 +519,6 @@
       "settingFollowRedirects": "global",
       "_type": "request"
     },
-
     {
       "_id": "fld_product",
       "parentId": "wrk_industrymap",
@@ -575,7 +576,6 @@
       "settingFollowRedirects": "global",
       "_type": "request"
     },
-
     {
       "_id": "fld_supply",
       "parentId": "wrk_industrymap",
@@ -595,11 +595,11 @@
       "created": 1753500000000,
       "url": "{{ _.baseUrl }}/api/supply-relations/roles",
       "name": "建立公司與零件的供應關係",
-      "description": "POST /api/supply-relations/roles — 201 建立成功／400 欄位驗證失敗／404 查無公司或零件／409 同組公司零件角色已存在。\n同一組公司零件可有多個角色（設計、製造、封測），同角色重複才算衝突。\ncompanyRole 可用值：DESIGN / MANUFACTURE / ASSEMBLY / BRAND / PACKAGING_TESTING。\n\n⚠️ 已知問題（2026-07-26 實測）：companyId 是內部自增主鍵，但公司端點的回應一律不含 id，目前無法從 API 取得此值，這支端點因而打不通（會回 400）。暫時解法是直接查資料庫取得 company.id 填入環境變數 companyId。",
+      "description": "POST /api/supply-relations/roles — 201 建立成功／400 欄位驗證失敗／404 查無公司或零件／409 同組公司零件角色已存在。\n同一組公司零件可有多個角色（設計、製造、封測），同角色重複才算衝突。\ncompanyRole 可用值：DESIGN / MANUFACTURE / ASSEMBLY / BRAND / PACKAGING_TESTING。\n公司以代號指定（未上市公司用正規化名稱），與建立公司回應的 reference 一致，不需要內部 id。",
       "method": "POST",
       "body": {
         "mimeType": "application/json",
-        "text": "{\n  \"companyId\": {{ _.companyId }},\n  \"itemId\": {{ _.childItemId }},\n  \"companyRole\": \"MANUFACTURE\",\n  \"provenance\": {\n    \"sourceType\": \"AI_GENERATED\",\n    \"sourceDetail\": \"claude-opus-5\",\n    \"confidence\": 0.75\n  }\n}"
+        "text": "{\n  \"companyCode\": \"{{ _.supplierCompanyCode }}\",\n  \"itemId\": {{ _.childItemId }},\n  \"companyRole\": \"MANUFACTURE\",\n  \"provenance\": {\n    \"sourceType\": \"AI_GENERATED\",\n    \"sourceDetail\": \"claude-opus-5\",\n    \"confidence\": 0.75\n  }\n}"
       },
       "parameters": [],
       "headers": [
@@ -627,11 +627,11 @@
       "created": 1753500000000,
       "url": "{{ _.baseUrl }}/api/supply-relations/market-shares",
       "name": "寫入市佔率",
-      "description": "POST /api/supply-relations/market-shares — 201 建立成功／400 維度缺漏或百分比超出 0–100／404 查無公司或零件／409 同一來源已寫過相同維度。\n期間、地區、口徑為必填；不同來源對同一組維度的不同數值可並存。\n市佔率可在尚未建立供應關係時先行寫入。\n\n⚠️ 已知問題（2026-07-26 實測）：與上一支相同，companyId 目前無法從 API 取得，需直接查資料庫。",
+      "description": "POST /api/supply-relations/market-shares — 201 建立成功／400 維度缺漏或百分比超出 0–100／404 查無公司或零件／409 同一來源已寫過相同維度。\n期間、地區、口徑為必填；不同來源對同一組維度的不同數值可並存。\n市佔率可在尚未建立供應關係時先行寫入。\n公司同樣以代號指定，不需要內部 id。sourceDetail 必須是可查證的真實出處。",
       "method": "POST",
       "body": {
         "mimeType": "application/json",
-        "text": "{\n  \"companyId\": {{ _.companyId }},\n  \"itemId\": {{ _.childItemId }},\n  \"periodType\": \"YEAR\",\n  \"periodValue\": \"2024\",\n  \"region\": \"全球\",\n  \"metric\": \"REVENUE\",\n  \"sharePercent\": 70.5,\n  \"provenance\": {\n    \"sourceType\": \"EXTERNAL\",\n    \"sourceDetail\": \"TrendForce 2024 年度報告\",\n    \"confidence\": 0.9\n  }\n}"
+        "text": "{\n  \"companyCode\": \"{{ _.supplierCompanyCode }}\",\n  \"itemId\": {{ _.childItemId }},\n  \"periodType\": \"YEAR\",\n  \"periodValue\": \"2024\",\n  \"region\": \"全球\",\n  \"metric\": \"REVENUE\",\n  \"sharePercent\": 70.5,\n  \"provenance\": {\n    \"sourceType\": \"EXTERNAL\",\n    \"sourceDetail\": \"請填寫可查證的來源，例：某某研究機構 2024 年度報告\",\n    \"confidence\": 0.9\n  }\n}"
       },
       "parameters": [],
       "headers": [
@@ -652,7 +652,6 @@
       "settingFollowRedirects": "global",
       "_type": "request"
     },
-
     {
       "_id": "fld_errors",
       "parentId": "wrk_industrymap",
@@ -662,7 +661,7 @@
       "description": "驗證 GlobalExceptionHandler 與 api-design.md 的狀態碼語意是否符合預期。",
       "environment": {},
       "environmentPropertyOrder": null,
-      "metaSortKey": -600,
+      "metaSortKey": -550,
       "_type": "request_group"
     },
     {
@@ -857,7 +856,6 @@
       "settingFollowRedirects": "global",
       "_type": "request"
     },
-
     {
       "_id": "fld_docs",
       "parentId": "wrk_industrymap",
@@ -884,6 +882,242 @@
       "headers": [],
       "authentication": {},
       "metaSortKey": -1000,
+      "isPrivate": false,
+      "settingStoreCookies": true,
+      "settingSendCookies": true,
+      "settingDisableRenderRequestBody": false,
+      "settingEncodeUrl": true,
+      "settingRebuildPath": true,
+      "settingFollowRedirects": "global",
+      "_type": "request"
+    },
+    {
+      "_id": "fld_review",
+      "parentId": "wrk_industrymap",
+      "modified": 1753500000000,
+      "created": 1753500000000,
+      "name": "05 Review 審核",
+      "description": "ReviewController：/api/reviews。八張內容表共用同一組端點，以「資料類型 + 識別碼」指定目標。\n支援類型：ITEM / ITEM_ALIAS / ITEM_COMPOSITION / COMPANY / COMPANY_ALIAS / COMPANY_IDENTIFIER / COMPANY_ITEM_ROLE / MARKET_SHARE。\n寫入端點一律建為草稿，對外查詢預設只回已驗證，因此建完資料後必須經這裡審核才查得到。",
+      "environment": {},
+      "environmentPropertyOrder": null,
+      "metaSortKey": -650,
+      "_type": "request_group"
+    },
+    {
+      "_id": "req_review_verify",
+      "parentId": "fld_review",
+      "modified": 1753500000000,
+      "created": 1753500000000,
+      "url": "{{ _.baseUrl }}/api/reviews",
+      "name": "審核單筆——轉為已驗證",
+      "description": "POST /api/reviews — 200 審核完成／400 不支援的類型或未提供審核者／404 查無此識別碼。\n轉為 VERIFIED / REJECTED 需提供 reviewer。",
+      "method": "POST",
+      "body": {
+        "mimeType": "application/json",
+        "text": "{\n  \"targetType\": \"ITEM\",\n  \"targetId\": \"{{ _.itemId }}\",\n  \"targetStatus\": \"VERIFIED\",\n  \"reviewer\": \"{{ _.reviewer }}\"\n}"
+      },
+      "parameters": [],
+      "headers": [
+        {
+          "id": "pair_h_req_review_verify",
+          "name": "Content-Type",
+          "value": "application/json"
+        }
+      ],
+      "authentication": {},
+      "metaSortKey": -1000,
+      "isPrivate": false,
+      "settingStoreCookies": true,
+      "settingSendCookies": true,
+      "settingDisableRenderRequestBody": false,
+      "settingEncodeUrl": true,
+      "settingRebuildPath": true,
+      "settingFollowRedirects": "global",
+      "_type": "request"
+    },
+    {
+      "_id": "req_review_draft",
+      "parentId": "fld_review",
+      "modified": 1753500000000,
+      "created": 1753500000000,
+      "url": "{{ _.baseUrl }}/api/reviews",
+      "name": "審核單筆——退回草稿（清空審核紀錄）",
+      "description": "退回 DRAFT 不需 reviewer，且會清空 reviewedBy 與 reviewedAt——退回草稿代表「這筆還沒被審過」。",
+      "method": "POST",
+      "body": {
+        "mimeType": "application/json",
+        "text": "{\n  \"targetType\": \"ITEM\",\n  \"targetId\": \"{{ _.itemId }}\",\n  \"targetStatus\": \"DRAFT\"\n}"
+      },
+      "parameters": [],
+      "headers": [
+        {
+          "id": "pair_h_req_review_draft",
+          "name": "Content-Type",
+          "value": "application/json"
+        }
+      ],
+      "authentication": {},
+      "metaSortKey": -900,
+      "isPrivate": false,
+      "settingStoreCookies": true,
+      "settingSendCookies": true,
+      "settingDisableRenderRequestBody": false,
+      "settingEncodeUrl": true,
+      "settingRebuildPath": true,
+      "settingFollowRedirects": "global",
+      "_type": "request"
+    },
+    {
+      "_id": "req_review_reject",
+      "parentId": "fld_review",
+      "modified": 1753500000000,
+      "created": 1753500000000,
+      "url": "{{ _.baseUrl }}/api/reviews",
+      "name": "審核單筆——標記已駁回",
+      "description": "已駁回的資料保留不刪除，但任何對外查詢（含 includeDrafts=true）都不會回傳。",
+      "method": "POST",
+      "body": {
+        "mimeType": "application/json",
+        "text": "{\n  \"targetType\": \"ITEM_COMPOSITION\",\n  \"targetId\": \"{{ _.compositionId }}\",\n  \"targetStatus\": \"REJECTED\",\n  \"reviewer\": \"{{ _.reviewer }}\"\n}"
+      },
+      "parameters": [],
+      "headers": [
+        {
+          "id": "pair_h_req_review_reject",
+          "name": "Content-Type",
+          "value": "application/json"
+        }
+      ],
+      "authentication": {},
+      "metaSortKey": -800,
+      "isPrivate": false,
+      "settingStoreCookies": true,
+      "settingSendCookies": true,
+      "settingDisableRenderRequestBody": false,
+      "settingEncodeUrl": true,
+      "settingRebuildPath": true,
+      "settingFollowRedirects": "global",
+      "_type": "request"
+    },
+    {
+      "_id": "req_review_batch",
+      "parentId": "fld_review",
+      "modified": 1753500000000,
+      "created": 1753500000000,
+      "url": "{{ _.baseUrl }}/api/reviews/batch",
+      "name": "批次審核（可跨資料類型）",
+      "description": "POST /api/reviews/batch — 200 逐筆回報／400 空批次。\n各筆可屬於不同資料類型；個別失敗不影響其他項目，回應逐筆帶 success 與 message。\n建完一台腳踏車後，用這支一次審掉節點、組成關係、公司、識別碼與供應角色。",
+      "method": "POST",
+      "body": {
+        "mimeType": "application/json",
+        "text": "{\n  \"targets\": [\n    {\n      \"targetType\": \"ITEM\",\n      \"targetId\": \"{{ _.itemId }}\"\n    },\n    {\n      \"targetType\": \"ITEM_COMPOSITION\",\n      \"targetId\": \"{{ _.compositionId }}\"\n    },\n    {\n      \"targetType\": \"COMPANY_ITEM_ROLE\",\n      \"targetId\": 1\n    }\n  ],\n  \"targetStatus\": \"VERIFIED\",\n  \"reviewer\": \"{{ _.reviewer }}\"\n}"
+      },
+      "parameters": [],
+      "headers": [
+        {
+          "id": "pair_h_req_review_batch",
+          "name": "Content-Type",
+          "value": "application/json"
+        }
+      ],
+      "authentication": {},
+      "metaSortKey": -700,
+      "isPrivate": false,
+      "settingStoreCookies": true,
+      "settingSendCookies": true,
+      "settingDisableRenderRequestBody": false,
+      "settingEncodeUrl": true,
+      "settingRebuildPath": true,
+      "settingFollowRedirects": "global",
+      "_type": "request"
+    },
+    {
+      "_id": "req_review_unsupported",
+      "parentId": "fld_review",
+      "modified": 1753500000000,
+      "created": 1753500000000,
+      "url": "{{ _.baseUrl }}/api/reviews",
+      "name": "400 — 不支援的目標類型",
+      "description": "白名單以外的類型必須是 400，不得是 500（見 data-provenance spec）。",
+      "method": "POST",
+      "body": {
+        "mimeType": "application/json",
+        "text": "{\n  \"targetType\": \"PATENT\",\n  \"targetId\": 1,\n  \"targetStatus\": \"VERIFIED\",\n  \"reviewer\": \"{{ _.reviewer }}\"\n}"
+      },
+      "parameters": [],
+      "headers": [
+        {
+          "id": "pair_h_req_review_unsupported",
+          "name": "Content-Type",
+          "value": "application/json"
+        }
+      ],
+      "authentication": {},
+      "metaSortKey": -600,
+      "isPrivate": false,
+      "settingStoreCookies": true,
+      "settingSendCookies": true,
+      "settingDisableRenderRequestBody": false,
+      "settingEncodeUrl": true,
+      "settingRebuildPath": true,
+      "settingFollowRedirects": "global",
+      "_type": "request"
+    },
+    {
+      "_id": "req_review_no_reviewer",
+      "parentId": "fld_review",
+      "modified": 1753500000000,
+      "created": 1753500000000,
+      "url": "{{ _.baseUrl }}/api/reviews",
+      "name": "400 — 轉為已驗證但未提供審核者",
+      "description": "由 payload 的 @AssertTrue 在 API 邊界擋下。",
+      "method": "POST",
+      "body": {
+        "mimeType": "application/json",
+        "text": "{\n  \"targetType\": \"ITEM\",\n  \"targetId\": \"{{ _.itemId }}\",\n  \"targetStatus\": \"VERIFIED\"\n}"
+      },
+      "parameters": [],
+      "headers": [
+        {
+          "id": "pair_h_req_review_no_reviewer",
+          "name": "Content-Type",
+          "value": "application/json"
+        }
+      ],
+      "authentication": {},
+      "metaSortKey": -500,
+      "isPrivate": false,
+      "settingStoreCookies": true,
+      "settingSendCookies": true,
+      "settingDisableRenderRequestBody": false,
+      "settingEncodeUrl": true,
+      "settingRebuildPath": true,
+      "settingFollowRedirects": "global",
+      "_type": "request"
+    },
+    {
+      "_id": "req_review_empty_batch",
+      "parentId": "fld_review",
+      "modified": 1753500000000,
+      "created": 1753500000000,
+      "url": "{{ _.baseUrl }}/api/reviews/batch",
+      "name": "400 — 空批次",
+      "description": "由 @NotEmpty 擋下，不進 service。",
+      "method": "POST",
+      "body": {
+        "mimeType": "application/json",
+        "text": "{\n  \"targets\": [],\n  \"targetStatus\": \"VERIFIED\",\n  \"reviewer\": \"{{ _.reviewer }}\"\n}"
+      },
+      "parameters": [],
+      "headers": [
+        {
+          "id": "pair_h_req_review_empty_batch",
+          "name": "Content-Type",
+          "value": "application/json"
+        }
+      ],
+      "authentication": {},
+      "metaSortKey": -400,
       "isPrivate": false,
       "settingStoreCookies": true,
       "settingSendCookies": true,

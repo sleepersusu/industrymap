@@ -2,6 +2,7 @@ package com.profetai.industrymap.service.item;
 
 import com.profetai.industrymap.exceptions.ServerException;
 import com.profetai.industrymap.helper.ProvenanceValidator;
+import com.profetai.industrymap.helper.ReviewScopes;
 import com.profetai.industrymap.model.Item;
 import com.profetai.industrymap.model.ItemAlias;
 import com.profetai.industrymap.payloads.item.CreateItemAliasRequest;
@@ -106,11 +107,34 @@ public class ItemService {
         return saved;
     }
 
-    /** 取得節點，查無則 404 */
+    /** 取得節點，查無則 404。供寫入流程使用，不過濾審核狀態 */
     @Transactional(readOnly = true)
     public Item getById(Long itemId) {
         return itemRepository.findById(itemId)
                 .orElseThrow(() -> new ServerException("查無此品類節點：" + itemId, HttpStatus.NOT_FOUND));
+    }
+
+    /**
+     * 對外取得節點：已駁回的節點視為不存在。
+     *
+     * <p>與 {@link #getById} 分開是因為寫入流程（登記別名、掛組成關係）仍需取得實體本身，
+     * 而對外查詢不得回傳已駁回的資料。</p>
+     *
+     * @throws ServerException 節點不存在或已被駁回（404）
+     */
+    @Transactional(readOnly = true)
+    public Item getVisibleById(Long itemId) {
+        Item item = getById(itemId);
+        if (!ReviewScopes.isExposable(item.getReviewStatus())) {
+            throw new ServerException("查無此品類節點：" + itemId, HttpStatus.NOT_FOUND);
+        }
+        return item;
+    }
+
+    /** 對外以名稱或別名解析節點：已駁回的節點視為查無 */
+    @Transactional(readOnly = true)
+    public Optional<Item> resolveVisibleByName(String rawName) {
+        return resolveByName(rawName).filter(item -> ReviewScopes.isExposable(item.getReviewStatus()));
     }
 
     private Item resolveParentCategory(Long parentCategoryId) {

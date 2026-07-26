@@ -107,7 +107,7 @@ class MarketShareNativeQueryTest extends AbstractPostgresIntegrationTest {
 
     private Company company(String normalizedName) {
         return companyRepository.saveAndFlush(Company.builder()
-                .normalizedName(normalizedName)
+                .normalizedName(FIXTURE_PREFIX + normalizedName)
                 .displayName(normalizedName)
                 .sourceType(SourceType.MANUAL)
                 .reviewStatus(ReviewStatus.VERIFIED)
@@ -116,7 +116,7 @@ class MarketShareNativeQueryTest extends AbstractPostgresIntegrationTest {
 
     private Item item(String normalizedName) {
         return Item.builder()
-                .normalizedName(normalizedName)
+                .normalizedName(FIXTURE_PREFIX + normalizedName)
                 .displayName(normalizedName)
                 .sourceType(SourceType.MANUAL)
                 .reviewStatus(ReviewStatus.VERIFIED)

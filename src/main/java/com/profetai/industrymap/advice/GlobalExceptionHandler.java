@@ -6,6 +6,7 @@ import jakarta.validation.ConstraintViolationException;
 import lombok.extern.log4j.Log4j2;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
+import org.springframework.http.converter.HttpMessageNotReadableException;
 import org.springframework.validation.FieldError;
 import org.springframework.web.bind.MethodArgumentNotValidException;
 import org.springframework.web.bind.MissingServletRequestParameterException;
@@ -48,6 +49,16 @@ public class GlobalExceptionHandler {
     public ResponseEntity<ServerResponse<Void>> handleTypeMismatch(MethodArgumentTypeMismatchException ex) {
         log.warn("參數型別錯誤: name={} value={}", ex.getName(), ex.getValue());
         return badRequest("參數格式不正確：" + ex.getName());
+    }
+
+    /**
+     * request body 無法解析：JSON 格式錯誤，或列舉欄位帶了白名單以外的值
+     * （例如審核端點指定不支援的資料類型）。語意上是請求錯誤，不該是 500。
+     */
+    @ExceptionHandler(HttpMessageNotReadableException.class)
+    public ResponseEntity<ServerResponse<Void>> handleUnreadableBody(HttpMessageNotReadableException ex) {
+        log.warn("請求內容無法解析: {}", ex.getMostSpecificCause().getMessage());
+        return badRequest("請求內容格式不正確或欄位值不在支援範圍內");
     }
 
     @ExceptionHandler(MissingServletRequestParameterException.class)

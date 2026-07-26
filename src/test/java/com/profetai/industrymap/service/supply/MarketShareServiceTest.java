@@ -12,9 +12,9 @@ import com.profetai.industrymap.payloads.ProvenanceRequest;
 import com.profetai.industrymap.payloads.supply.CreateMarketShareRequest;
 import com.profetai.industrymap.payloads.supply.MarketShareResponse;
 import com.profetai.industrymap.repository.CompanyItemRoleRepository;
-import com.profetai.industrymap.repository.CompanyRepository;
 import com.profetai.industrymap.repository.ItemRepository;
 import com.profetai.industrymap.repository.MarketShareRepository;
+import com.profetai.industrymap.service.company.CompanyService;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -42,7 +42,7 @@ import static org.mockito.Mockito.when;
 class MarketShareServiceTest {
 
     @Mock
-    private CompanyRepository companyRepository;
+    private CompanyService companyService;
 
     @Mock
     private ItemRepository itemRepository;
@@ -55,6 +55,8 @@ class MarketShareServiceTest {
 
     @InjectMocks
     private MarketShareService marketShareService;
+
+    private static final String SHIMANO_CODE = "7309";
 
     private final Company shimano = Company.builder().id(1L).normalizedName("shimano").displayName("Shimano").build();
     private final Item derailleur = Item.builder().id(2L).normalizedName("變速器").displayName("變速器").build();
@@ -152,6 +154,35 @@ class MarketShareServiceTest {
     }
 
     @Test
+    @DisplayName("以公司代號寫入市佔率時應解析出對應公司")
+    void create_byCompanyCode_shouldResolveCompanyWithoutInternalId() {
+        givenCompanyAndItem();
+        when(marketShareRepository.existsSameDimensionsFromSameSource(
+                1L, 2L, "YEAR", "2024", "全球", "REVENUE", "報告 A")).thenReturn(false);
+        when(marketShareRepository.save(any(MarketShare.class))).thenAnswer(invocation -> invocation.getArgument(0));
+
+        MarketShare created = marketShareService.create(validRequest("報告 A", new BigDecimal("70.0")));
+
+        assertAll(
+                () -> assertEquals(shimano, created.getCompany()),
+                () -> verify(companyService).getByReference(SHIMANO_CODE));
+    }
+
+    @Test
+    @DisplayName("公司代號不存在時應拋出 404 ServerException 且不寫入")
+    void create_unknownCompanyCode_shouldThrowNotFound() {
+        when(companyService.getByReference(SHIMANO_CODE))
+                .thenThrow(new ServerException("查無此公司：" + SHIMANO_CODE, HttpStatus.NOT_FOUND));
+
+        ServerException ex = assertThrows(ServerException.class,
+                () -> marketShareService.create(validRequest("報告 A", new BigDecimal("70.0"))));
+
+        assertAll(
+                () -> assertEquals(HttpStatus.NOT_FOUND, ex.getHttpStatus()),
+                () -> verify(marketShareRepository, never()).save(any(MarketShare.class)));
+    }
+
+    @Test
     @DisplayName("排名查詢應回傳依百分比降冪排序的結果")
     void findRanking_existingData_shouldReturnSortedByShareDesc() {
         MarketShare top = MarketShare.builder().company(shimano).item(derailleur)
@@ -178,14 +209,37 @@ class MarketShareServiceTest {
         assertTrue(marketShareService.findRanking(2L, PeriodType.YEAR, "2024", "全球", ShareMetric.REVENUE, false).isEmpty());
     }
 
+    @Test
+    @DisplayName("市佔率已驗證但其公司已被駁回時，該筆不得出現在排名")
+    void findRanking_rejectedCompany_shouldBeExcluded() {
+        // Given：市佔率本身通過審核，但公司主檔事後被駁回
+        Company rejectedCompany = Company.builder().id(9L).normalizedName("空殼公司").displayName("空殼公司")
+                .reviewStatus(ReviewStatus.REJECTED).build();
+        MarketShare valid = MarketShare.builder().company(shimano).item(derailleur)
+                .sharePercent(new BigDecimal("70.0")).reviewStatus(ReviewStatus.VERIFIED).build();
+        MarketShare viaRejectedCompany = MarketShare.builder().company(rejectedCompany).item(derailleur)
+                .sharePercent(new BigDecimal("90.0")).reviewStatus(ReviewStatus.VERIFIED).build();
+        when(marketShareRepository.findRanking(2L, "YEAR", "2024", "全球", "REVENUE",
+                Set.of(ReviewStatus.VERIFIED.name()))).thenReturn(List.of(viaRejectedCompany, valid));
+
+        // When
+        List<MarketShareResponse> ranking =
+                marketShareService.findRanking(2L, PeriodType.YEAR, "2024", "全球", ShareMetric.REVENUE, false);
+
+        // Then
+        assertAll(
+                () -> assertEquals(1, ranking.size()),
+                () -> assertEquals(new BigDecimal("70.0"), ranking.get(0).getSharePercent()));
+    }
+
     private void givenCompanyAndItem() {
-        when(companyRepository.findById(1L)).thenReturn(Optional.of(shimano));
+        when(companyService.getByReference(SHIMANO_CODE)).thenReturn(shimano);
         when(itemRepository.findById(2L)).thenReturn(Optional.of(derailleur));
     }
 
     private CreateMarketShareRequest validRequest(String sourceDetail, BigDecimal sharePercent) {
         return CreateMarketShareRequest.builder()
-                .companyId(1L)
+                .companyCode(SHIMANO_CODE)
                 .itemId(2L)
                 .periodType(PeriodType.YEAR)
                 .periodValue("2024")

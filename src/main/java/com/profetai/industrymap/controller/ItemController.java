@@ -72,7 +72,7 @@ public class ItemController {
             @ApiResponse(responseCode = "404", description = "查無此節點")
     })
     public ResponseEntity<ServerResponse<ItemResponse>> get(@PathVariable Long id) {
-        return ServerResponses.ok(ItemResponse.from(itemService.getById(id)));
+        return ServerResponses.ok(ItemResponse.from(itemService.getVisibleById(id)));
     }
 
     @GetMapping
@@ -84,7 +84,7 @@ public class ItemController {
             @ApiResponse(responseCode = "404", description = "名稱與別名皆查無")
     })
     public ResponseEntity<ServerResponse<ItemResponse>> resolveByName(@Valid @ModelAttribute ResolveItemQuery query) {
-        ItemResponse resolved = itemService.resolveByName(query.getName())
+        ItemResponse resolved = itemService.resolveVisibleByName(query.getName())
                 .map(ItemResponse::from)
                 .orElseThrow(() -> new ServerException("查無此品類節點：" + query.getName(), HttpStatus.NOT_FOUND));
         return ServerResponses.ok(resolved);

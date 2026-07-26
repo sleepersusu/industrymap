@@ -9,6 +9,7 @@ import java.util.Set;
 import static org.junit.jupiter.api.Assertions.assertAll;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 class ReviewScopesTest {
 
@@ -37,5 +38,19 @@ class ReviewScopesTest {
     @DisplayName("native 查詢用的狀態名稱應與列舉名稱一致")
     void visibleStatusNames_shouldMatchEnumNames() {
         assertEquals(Set.of("VERIFIED", "DRAFT"), ReviewScopes.visibleStatusNames(true));
+    }
+
+    @Test
+    @DisplayName("已駁回的實體本身不得外露")
+    void isExposable_rejected_shouldBeFalse() {
+        assertFalse(ReviewScopes.isExposable(ReviewStatus.REJECTED));
+    }
+
+    @Test
+    @DisplayName("草稿與已驗證的實體本身可外露，草稿的取捨交由各查詢的 includeDrafts 決定")
+    void isExposable_draftAndVerified_shouldBeTrue() {
+        assertAll(
+                () -> assertTrue(ReviewScopes.isExposable(ReviewStatus.DRAFT)),
+                () -> assertTrue(ReviewScopes.isExposable(ReviewStatus.VERIFIED)));
     }
 }

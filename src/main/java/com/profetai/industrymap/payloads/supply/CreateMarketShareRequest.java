@@ -27,9 +27,10 @@ import java.math.BigDecimal;
 @Schema(description = "寫入市佔率的請求")
 public class CreateMarketShareRequest {
 
-    @NotNull(message = "公司為必填")
-    @Schema(requiredMode = Schema.RequiredMode.REQUIRED)
-    private Long companyId;
+    @NotBlank(message = "公司代號為必填")
+    @Schema(description = "公司代號；未上市公司用正規化名稱，與建立公司回應的 reference 一致",
+            example = "5306", requiredMode = Schema.RequiredMode.REQUIRED)
+    private String companyCode;
 
     @NotNull(message = "零件為必填")
     @Schema(requiredMode = Schema.RequiredMode.REQUIRED)

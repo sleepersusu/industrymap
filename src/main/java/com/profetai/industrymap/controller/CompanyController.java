@@ -60,8 +60,9 @@ public class CompanyController {
     public ResponseEntity<ServerResponse<CompanyResponse>> get(
             @Parameter(description = "公司代號，例：2330；未上市公司用正規化名稱") @PathVariable String code) {
 
-        Company company = companyService.getByReference(code);
-        return ServerResponses.ok(CompanyResponse.from(company, companyService.findIdentifiers(company.getId())));
+        Company company = companyService.getVisibleByReference(code);
+        return ServerResponses.ok(
+                CompanyResponse.from(company, companyService.findVisibleIdentifiers(company.getId())));
     }
 
     @PostMapping("/{code}/identifiers")

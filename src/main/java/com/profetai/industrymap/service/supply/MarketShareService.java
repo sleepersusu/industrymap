@@ -10,9 +10,9 @@ import com.profetai.industrymap.model.Item;
 import com.profetai.industrymap.model.MarketShare;
 import com.profetai.industrymap.payloads.supply.CreateMarketShareRequest;
 import com.profetai.industrymap.payloads.supply.MarketShareResponse;
-import com.profetai.industrymap.repository.CompanyRepository;
 import com.profetai.industrymap.repository.ItemRepository;
 import com.profetai.industrymap.repository.MarketShareRepository;
+import com.profetai.industrymap.service.company.CompanyService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.log4j.Log4j2;
 import org.springframework.http.HttpStatus;
@@ -37,7 +37,7 @@ public class MarketShareService {
     private static final BigDecimal MIN_SHARE_PERCENT = BigDecimal.ZERO;
     private static final BigDecimal MAX_SHARE_PERCENT = BigDecimal.valueOf(100);
 
-    private final CompanyRepository companyRepository;
+    private final CompanyService companyService;
     private final ItemRepository itemRepository;
     private final MarketShareRepository marketShareRepository;
 
@@ -52,8 +52,7 @@ public class MarketShareService {
         ProvenanceValidator.validate(request.getProvenance());
         validateDimensions(request);
 
-        Company company = companyRepository.findById(request.getCompanyId())
-                .orElseThrow(() -> new ServerException("查無此公司：" + request.getCompanyId(), HttpStatus.NOT_FOUND));
+        Company company = companyService.getByReference(request.getCompanyCode());
         Item item = itemRepository.findById(request.getItemId())
                 .orElseThrow(() -> new ServerException("查無此品類節點：" + request.getItemId(), HttpStatus.NOT_FOUND));
 
@@ -79,8 +78,8 @@ public class MarketShareService {
                 .build();
 
         MarketShare saved = marketShareRepository.save(marketShare);
-        log.info("寫入市佔率 companyId={} itemId={} period={} region={} metric={} share={}",
-                company.getId(), item.getId(), request.getPeriodValue(), request.getRegion(),
+        log.info("寫入市佔率 companyCode={} itemId={} period={} region={} metric={} share={}",
+                request.getCompanyCode(), item.getId(), request.getPeriodValue(), request.getRegion(),
                 request.getMetric(), request.getSharePercent());
         return saved;
     }
@@ -95,8 +94,10 @@ public class MarketShareService {
     @Transactional(readOnly = true)
     public List<MarketShareResponse> findRanking(Long itemId, PeriodType periodType, String periodValue,
                                                  String region, ShareMetric metric, boolean includeDrafts) {
+        // 市佔率本身通過審核，不代表它指向的公司還算數；公司被駁回時這筆數字一併不外露
         return marketShareRepository.findRanking(itemId, periodType.name(), periodValue, region, metric.name(),
                         ReviewScopes.visibleStatusNames(includeDrafts)).stream()
+                .filter(share -> ReviewScopes.isExposable(share.getCompany().getReviewStatus()))
                 .map(MarketShareResponse::from)
                 .toList();
     }

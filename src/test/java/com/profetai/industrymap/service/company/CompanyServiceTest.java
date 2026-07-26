@@ -1,6 +1,7 @@
 package com.profetai.industrymap.service.company;
 
 import com.profetai.industrymap.enums.IdentifierType;
+import com.profetai.industrymap.enums.ReviewStatus;
 import com.profetai.industrymap.enums.SourceType;
 import com.profetai.industrymap.exceptions.ServerException;
 import com.profetai.industrymap.model.Company;
@@ -18,6 +19,7 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
+import org.hibernate.LazyInitializationException;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.http.HttpStatus;
 
@@ -29,6 +31,8 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.Mockito.lenient;
+import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
@@ -49,6 +53,7 @@ class CompanyServiceTest {
     private CompanyService companyService;
 
     private final Company tsmc = Company.builder().id(1L).normalizedName("台積電").displayName("台積電").build();
+    private final Company kmc = Company.builder().id(4L).normalizedName("桂盟國際").displayName("桂盟國際").build();
 
     @Test
     @DisplayName("建立沒有任何識別碼的未上市公司應成功")
@@ -140,10 +145,52 @@ class CompanyServiceTest {
         when(companyIdentifierRepository.findByIdentifierValue("2330")).thenReturn(List.of(
                 CompanyIdentifier.builder().company(tsmc).identifierType(IdentifierType.TWSE)
                         .identifierValue("2330").isPrimary(true).build()));
+        when(companyRepository.findById(1L)).thenReturn(Optional.of(tsmc));
 
         Company found = companyService.getByIdentifierValue("2330");
 
         assertEquals(tsmc, found);
+    }
+
+    @Test
+    @DisplayName("以代號查詢應回傳可直接讀取欄位的公司，而非識別碼上未初始化的關聯")
+    void getByIdentifierValue_existingCode_shouldReturnInitializedCompanyNotLazyProxy() {
+        // Given：識別碼上的 company 是 LAZY 關聯，交易結束後讀欄位會炸
+        // （open-in-view 為 false，呼叫端在交易外組裝回應）
+        CompanyIdentifier identifier = CompanyIdentifier.builder().company(uninitializedProxyOf(kmc))
+                .identifierType(IdentifierType.TWSE).identifierValue("5306").isPrimary(true).build();
+        when(companyIdentifierRepository.findByIdentifierValue("5306")).thenReturn(List.of(identifier));
+        when(companyRepository.findById(4L)).thenReturn(Optional.of(kmc));
+
+        // When
+        Company found = companyService.getByIdentifierValue("5306");
+
+        // Then：回傳的公司必須能在交易外讀取欄位
+        assertAll(
+                () -> assertEquals("桂盟國際", found.getDisplayName()),
+                () -> assertEquals("桂盟國際", found.getNormalizedName()));
+    }
+
+    @Test
+    @DisplayName("以路徑識別（代號）查詢時同樣應回傳可直接讀取欄位的公司")
+    void getByReference_matchingIdentifier_shouldReturnInitializedCompanyNotLazyProxy() {
+        CompanyIdentifier identifier = CompanyIdentifier.builder().company(uninitializedProxyOf(kmc))
+                .identifierType(IdentifierType.TWSE).identifierValue("5306").isPrimary(true).build();
+        when(companyIdentifierRepository.findByIdentifierValue("5306")).thenReturn(List.of(identifier));
+        when(companyRepository.findById(4L)).thenReturn(Optional.of(kmc));
+
+        assertEquals("桂盟國際", companyService.getByReference("5306").getDisplayName());
+    }
+
+    /** 模擬 Hibernate 的未初始化代理：只有主鍵讀得到，其餘欄位一律拋 LazyInitializationException */
+    private Company uninitializedProxyOf(Company company) {
+        Company proxy = mock(Company.class);
+        when(proxy.getId()).thenReturn(company.getId());
+        lenient().when(proxy.getDisplayName())
+                .thenThrow(new LazyInitializationException("Could not initialize proxy - no session"));
+        lenient().when(proxy.getNormalizedName())
+                .thenThrow(new LazyInitializationException("Could not initialize proxy - no session"));
+        return proxy;
     }
 
     @Test
@@ -201,6 +248,41 @@ class CompanyServiceTest {
 
         assertEquals(HttpStatus.NOT_FOUND,
                 assertThrows(ServerException.class, () -> companyService.getByReference("nobody")).getHttpStatus());
+    }
+
+    @Test
+    @DisplayName("對外依代號取得公司時已駁回的公司應視為查無而回 404")
+    void getVisibleByReference_rejectedCompany_shouldThrowNotFound() {
+        Company rejected = Company.builder().id(9L).normalizedName("空殼公司").displayName("空殼公司")
+                .reviewStatus(ReviewStatus.REJECTED).build();
+        when(companyIdentifierRepository.findByIdentifierValue("9999")).thenReturn(List.of());
+        when(companyRepository.findByNormalizedName("9999")).thenReturn(Optional.of(rejected));
+
+        assertEquals(HttpStatus.NOT_FOUND,
+                assertThrows(ServerException.class,
+                        () -> companyService.getVisibleByReference("9999")).getHttpStatus());
+    }
+
+    @Test
+    @DisplayName("對外依代號取得公司時草稿公司仍應取得")
+    void getVisibleByReference_draftCompany_shouldReturnCompany() {
+        when(companyIdentifierRepository.findByIdentifierValue("台積電")).thenReturn(List.of());
+        when(companyRepository.findByNormalizedName("台積電")).thenReturn(Optional.of(tsmc));
+
+        assertEquals(tsmc, companyService.getVisibleByReference("台積電"));
+    }
+
+    @Test
+    @DisplayName("對外列出公司識別碼時已駁回的識別碼不得出現")
+    void findVisibleIdentifiers_rejectedIdentifier_shouldBeExcluded() {
+        CompanyIdentifier valid = CompanyIdentifier.builder()
+                .id(1L).company(tsmc).identifierType(IdentifierType.TWSE).identifierValue("2330").build();
+        CompanyIdentifier rejected = CompanyIdentifier.builder()
+                .id(2L).company(tsmc).identifierType(IdentifierType.TWSE).identifierValue("0000")
+                .reviewStatus(ReviewStatus.REJECTED).build();
+        when(companyIdentifierRepository.findByCompanyId(1L)).thenReturn(List.of(valid, rejected));
+
+        assertEquals(List.of(valid), companyService.findVisibleIdentifiers(1L));
     }
 
     private CreateIdentifierRequest identifierRequest(IdentifierType type, String value, boolean primary) {

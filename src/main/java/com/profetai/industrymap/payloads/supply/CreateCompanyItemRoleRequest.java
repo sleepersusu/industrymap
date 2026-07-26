@@ -4,6 +4,7 @@ import com.profetai.industrymap.enums.CompanyRole;
 import com.profetai.industrymap.payloads.ProvenanceRequest;
 import io.swagger.v3.oas.annotations.media.Schema;
 import jakarta.validation.Valid;
+import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotNull;
 import lombok.AllArgsConstructor;
 import lombok.Builder;
@@ -17,9 +18,10 @@ import lombok.NoArgsConstructor;
 @Schema(description = "建立公司與零件供應關係的請求")
 public class CreateCompanyItemRoleRequest {
 
-    @NotNull(message = "公司為必填")
-    @Schema(description = "公司 id", requiredMode = Schema.RequiredMode.REQUIRED)
-    private Long companyId;
+    @NotBlank(message = "公司代號為必填")
+    @Schema(description = "公司代號；未上市公司用正規化名稱，與建立公司回應的 reference 一致",
+            example = "5306", requiredMode = Schema.RequiredMode.REQUIRED)
+    private String companyCode;
 
     @NotNull(message = "零件為必填")
     @Schema(description = "零件 item id", requiredMode = Schema.RequiredMode.REQUIRED)

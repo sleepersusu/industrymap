@@ -35,11 +35,12 @@ public class SupplyRelationController {
 
     @PostMapping("/roles")
     @Operation(summary = "建立公司與零件的供應關係",
-            description = "同一組公司零件可有多個角色（設計、製造、封測），同角色重複才算衝突。")
+            description = "公司以代號指定（未上市公司用正規化名稱），與建立公司回應的 reference 一致。"
+                    + "同一組公司零件可有多個角色（設計、製造、封測），同角色重複才算衝突。")
     @ApiResponses({
             @ApiResponse(responseCode = "201", description = "建立成功"),
             @ApiResponse(responseCode = "400", description = "欄位驗證失敗"),
-            @ApiResponse(responseCode = "404", description = "查無公司或零件"),
+            @ApiResponse(responseCode = "404", description = "查無此公司代號或零件"),
             @ApiResponse(responseCode = "409", description = "同組公司零件角色已存在")
     })
     public ResponseEntity<ServerResponse<SupplierResponse>> createRole(
@@ -50,11 +51,12 @@ public class SupplyRelationController {
 
     @PostMapping("/market-shares")
     @Operation(summary = "寫入市佔率",
-            description = "期間、地區、口徑為必填；不同來源對同一組維度的不同數值可並存，同來源重複則衝突。")
+            description = "公司以代號指定。期間、地區、口徑為必填；"
+                    + "不同來源對同一組維度的不同數值可並存，同來源重複則衝突。")
     @ApiResponses({
             @ApiResponse(responseCode = "201", description = "建立成功"),
             @ApiResponse(responseCode = "400", description = "維度缺漏或百分比超出 0–100"),
-            @ApiResponse(responseCode = "404", description = "查無公司或零件"),
+            @ApiResponse(responseCode = "404", description = "查無此公司代號或零件"),
             @ApiResponse(responseCode = "409", description = "同一來源已寫過相同維度")
     })
     public ResponseEntity<ServerResponse<MarketShareResponse>> createMarketShare(

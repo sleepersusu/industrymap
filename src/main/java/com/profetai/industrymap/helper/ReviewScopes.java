@@ -28,4 +28,18 @@ public final class ReviewScopes {
     public static Set<String> visibleStatusNames(boolean includeDrafts) {
         return visibleStatuses(includeDrafts).stream().map(Enum::name).collect(Collectors.toUnmodifiableSet());
     }
+
+    /**
+     * 實體本身是否可外露。
+     *
+     * <p>上面兩個方法過濾的是「關係」（組成、供應角色、市佔率）的狀態，但實體本身
+     * （品類節點、公司、別名、識別碼）也有審核狀態：一筆已驗證的組成關係可能指向一個
+     * 事後被駁回的節點，此時關係過得了 {@link #visibleStatuses}，節點卻不該外露。</p>
+     *
+     * <p>這裡只擋 REJECTED、不擋 DRAFT：草稿的取捨屬於各查詢自己的 {@code includeDrafts}
+     * 語意，而「建立後立刻查回自己剛建的草稿」是既有且必要的行為。</p>
+     */
+    public static boolean isExposable(ReviewStatus status) {
+        return status != ReviewStatus.REJECTED;
+    }
 }

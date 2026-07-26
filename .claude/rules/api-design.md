@@ -18,6 +18,8 @@
 |------|--------|------|------|
 | `/api/products/...` | 第一階段 | 產品 / BOM 拆解 | `/api/products/{id}/components` |
 | `/api/companies/...` | 第一階段 | 公司基本資料（含代號、對應零組件） | `/api/companies/{code}` |
+| `/api/supply-relations/...` | 第一階段 | 供應角色與市佔率寫入（公司以**代號**指定，不收內部 id） | `/api/supply-relations/roles` |
+| `/api/reviews` | 第一階段 | 審核狀態流轉，八張內容表共用單一端點 | `/api/reviews`、`/api/reviews/batch` |
 | `/api/companies/{code}/news`、`/patents`、`/stock-price` | 後期 | 公司情資子資源 | `/api/companies/{code}/stock-price` |
 | `/api/internal/...` | 後期 | 內部服務間（如 job 觸發、健康檢查） | `/api/internal/market-sync/trigger` |
 | `/api/public/...` | 視需求 | 對外公開查詢 | `/api/public/industry-map/{productId}` |

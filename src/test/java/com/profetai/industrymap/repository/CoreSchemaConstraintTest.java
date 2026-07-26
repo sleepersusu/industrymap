@@ -4,6 +4,7 @@ import com.profetai.industrymap.enums.CompanyRole;
 import com.profetai.industrymap.enums.IdentifierType;
 import com.profetai.industrymap.enums.Necessity;
 import com.profetai.industrymap.enums.PeriodType;
+import com.profetai.industrymap.enums.ReviewStatus;
 import com.profetai.industrymap.enums.ShareMetric;
 import com.profetai.industrymap.enums.SourceType;
 import com.profetai.industrymap.model.Company;
@@ -19,6 +20,7 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.dao.DataIntegrityViolationException;
 
 import java.math.BigDecimal;
+import java.util.EnumSet;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
@@ -116,8 +118,8 @@ class CoreSchemaConstraintTest extends AbstractPostgresIntegrationTest {
         companyIdentifierRepository.saveAndFlush(identifier(tsmc, IdentifierType.NYSE, "TSM", false));
 
         assertEquals(2, companyIdentifierRepository.findByCompanyId(tsmc.getId()).size());
-        assertEquals("2330", companyIdentifierRepository.findByCompanyIdAndIsPrimaryTrue(tsmc.getId())
-                .orElseThrow().getIdentifierValue());
+        assertEquals(FIXTURE_PREFIX + "2330", companyIdentifierRepository
+                .findByCompanyIdAndIsPrimaryTrue(tsmc.getId()).orElseThrow().getIdentifierValue());
     }
 
     @Test
@@ -177,13 +179,17 @@ class CoreSchemaConstraintTest extends AbstractPostgresIntegrationTest {
         MarketShare saved =
                 marketShareRepository.saveAndFlush(marketShare(shimano, derailleur, new BigDecimal("70.000"), "報告 A"));
 
+        // 範圍限定在這個零件：整張表可能有其他資料（沒有 Docker 時測試跑在共用的開發資料庫上），
+        // 這裡要證明的是「寫市佔率不會順手建出角色關係」，不是整張表為空
         assertNotNull(saved.getId());
-        assertTrue(companyItemRoleRepository.findAll().isEmpty());
+        assertTrue(companyItemRoleRepository
+                .findByItemIdAndReviewStatusIn(derailleur.getId(), EnumSet.allOf(ReviewStatus.class))
+                .isEmpty());
     }
 
     private Item item(String normalizedName, String displayName) {
         return Item.builder()
-                .normalizedName(normalizedName)
+                .normalizedName(FIXTURE_PREFIX + normalizedName)
                 .displayName(displayName)
                 .sourceType(SourceType.MANUAL)
                 .build();
@@ -192,7 +198,7 @@ class CoreSchemaConstraintTest extends AbstractPostgresIntegrationTest {
     private ItemAlias alias(Item item, String normalizedAlias, String displayAlias) {
         return ItemAlias.builder()
                 .item(item)
-                .normalizedAlias(normalizedAlias)
+                .normalizedAlias(FIXTURE_PREFIX + normalizedAlias)
                 .displayAlias(displayAlias)
                 .sourceType(SourceType.MANUAL)
                 .build();
@@ -209,7 +215,7 @@ class CoreSchemaConstraintTest extends AbstractPostgresIntegrationTest {
 
     private Company company(String normalizedName, String displayName) {
         return Company.builder()
-                .normalizedName(normalizedName)
+                .normalizedName(FIXTURE_PREFIX + normalizedName)
                 .displayName(displayName)
                 .sourceType(SourceType.MANUAL)
                 .build();
@@ -219,7 +225,7 @@ class CoreSchemaConstraintTest extends AbstractPostgresIntegrationTest {
         return CompanyIdentifier.builder()
                 .company(company)
                 .identifierType(type)
-                .identifierValue(value)
+                .identifierValue(FIXTURE_PREFIX + value)
                 .isPrimary(primary)
                 .sourceType(SourceType.MANUAL)
                 .build();

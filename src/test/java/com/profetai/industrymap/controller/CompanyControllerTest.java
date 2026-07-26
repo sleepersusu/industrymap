@@ -49,8 +49,8 @@ class CompanyControllerTest {
     @Test
     @DisplayName("依代號查詢公司應回傳公司資料與所有識別碼")
     void getCompany_byCode_shouldReturnCompanyWithIdentifiers() throws Exception {
-        when(companyService.getByReference("2330")).thenReturn(tsmc);
-        when(companyService.findIdentifiers(1L)).thenReturn(List.of(
+        when(companyService.getVisibleByReference("2330")).thenReturn(tsmc);
+        when(companyService.findVisibleIdentifiers(1L)).thenReturn(List.of(
                 CompanyIdentifier.builder().company(tsmc).identifierType(IdentifierType.TWSE)
                         .identifierValue("2330").isPrimary(true).build(),
                 CompanyIdentifier.builder().company(tsmc).identifierType(IdentifierType.NYSE)
@@ -66,7 +66,7 @@ class CompanyControllerTest {
     @Test
     @DisplayName("查無此公司代號時應回傳 404")
     void getCompany_unknownCode_shouldReturnNotFound() throws Exception {
-        when(companyService.getByReference("9999"))
+        when(companyService.getVisibleByReference("9999"))
                 .thenThrow(new ServerException("查無此公司代號", HttpStatus.NOT_FOUND));
 
         mockMvc.perform(get("/api/companies/9999"))

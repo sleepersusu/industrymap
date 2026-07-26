@@ -2,6 +2,7 @@ package com.profetai.industrymap.service.company;
 
 import com.profetai.industrymap.exceptions.ServerException;
 import com.profetai.industrymap.helper.ProvenanceValidator;
+import com.profetai.industrymap.helper.ReviewScopes;
 import com.profetai.industrymap.model.Company;
 import com.profetai.industrymap.model.CompanyAlias;
 import com.profetai.industrymap.model.CompanyIdentifier;
@@ -147,7 +148,7 @@ public class CompanyService {
         if (identifiers.isEmpty()) {
             throw new ServerException("查無此公司代號：" + identifierValue, HttpStatus.NOT_FOUND);
         }
-        return identifiers.get(0).getCompany();
+        return initialized(identifiers.get(0));
     }
 
     /**
@@ -162,10 +163,23 @@ public class CompanyService {
     public Company getByReference(String reference) {
         List<CompanyIdentifier> identifiers = companyIdentifierRepository.findByIdentifierValue(reference);
         if (!identifiers.isEmpty()) {
-            return identifiers.get(0).getCompany();
+            return initialized(identifiers.get(0));
         }
         return companyRepository.findByNormalizedName(NameNormalizer.normalize(reference))
                 .orElseThrow(() -> new ServerException("查無此公司：" + reference, HttpStatus.NOT_FOUND));
+    }
+
+    /**
+     * 取出識別碼所屬的公司本體。
+     *
+     * <p>{@code CompanyIdentifier.company} 是 LAZY 關聯，直接回傳拿到的是未初始化的代理；
+     * open-in-view 為 false，呼叫端在交易外讀欄位時會拋 LazyInitializationException。
+     * 因此改以主鍵重新載入實體——讀代理的主鍵不會觸發初始化，這一步是安全的。</p>
+     */
+    private Company initialized(CompanyIdentifier identifier) {
+        Long companyId = identifier.getCompany().getId();
+        return companyRepository.findById(companyId)
+                .orElseThrow(() -> new ServerException("查無此公司：" + companyId, HttpStatus.NOT_FOUND));
     }
 
     /** 以名稱或別名解析既有公司，供寫入前去重使用（design D9） */
@@ -183,9 +197,34 @@ public class CompanyService {
                 .orElseThrow(() -> new ServerException("查無此公司：" + companyId, HttpStatus.NOT_FOUND));
     }
 
-    /** 取得公司的所有識別碼 */
+    /** 取得公司的所有識別碼。供寫入流程使用，不過濾審核狀態 */
     @Transactional(readOnly = true)
     public List<CompanyIdentifier> findIdentifiers(Long companyId) {
         return companyIdentifierRepository.findByCompanyId(companyId);
+    }
+
+    /**
+     * 對外依路徑識別取得公司：已駁回的公司視為不存在。
+     *
+     * <p>與 {@link #getByReference} 分開是因為寫入流程（登記識別碼、別名、建立供應關係）
+     * 仍需解析公司實體，而對外查詢不得回傳已駁回的資料。</p>
+     *
+     * @throws ServerException 代號與名稱都查無，或該公司已被駁回（404）
+     */
+    @Transactional(readOnly = true)
+    public Company getVisibleByReference(String reference) {
+        Company company = getByReference(reference);
+        if (!ReviewScopes.isExposable(company.getReviewStatus())) {
+            throw new ServerException("查無此公司：" + reference, HttpStatus.NOT_FOUND);
+        }
+        return company;
+    }
+
+    /** 對外列出公司識別碼：已駁回的識別碼不外露 */
+    @Transactional(readOnly = true)
+    public List<CompanyIdentifier> findVisibleIdentifiers(Long companyId) {
+        return findIdentifiers(companyId).stream()
+                .filter(identifier -> ReviewScopes.isExposable(identifier.getReviewStatus()))
+                .toList();
     }
 }

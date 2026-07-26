@@ -96,10 +96,13 @@ public class ItemCompositionService {
 
     private ComponentNode buildNode(Item item, Necessity necessity, int remainingDepth,
                                     Necessity necessityFilter, Set<ReviewStatus> statuses) {
+        // 關係的狀態與節點自身的狀態是兩回事：一筆已驗證的關係可能指向事後被駁回的節點，
+        // 此時關係過得了 statuses，節點卻不該外露，整枝一併略過
         List<ComponentNode> children = remainingDepth <= 0
                 ? List.of()
                 : itemCompositionRepository.findByParentItemIdAndReviewStatusIn(item.getId(), statuses).stream()
                         .filter(edge -> necessityFilter == null || edge.getNecessity() == necessityFilter)
+                        .filter(edge -> ReviewScopes.isExposable(edge.getChildItem().getReviewStatus()))
                         .map(edge -> buildNode(edge.getChildItem(), edge.getNecessity(),
                                 remainingDepth - 1, necessityFilter, statuses))
                         .toList();
@@ -139,6 +142,10 @@ public class ItemCompositionService {
             for (ItemComposition edge : itemCompositionRepository.findByChildItemIdAndReviewStatusIn(current, statuses)) {
                 Item ancestor = edge.getParentItem();
                 if (!visited.add(ancestor.getId())) {
+                    continue;
+                }
+                // 節點被駁回代表這個節點本身不成立，經由它往上的路徑同樣不可信，不列入也不續走
+                if (!ReviewScopes.isExposable(ancestor.getReviewStatus())) {
                     continue;
                 }
                 if (ancestor.isEndProduct()) {

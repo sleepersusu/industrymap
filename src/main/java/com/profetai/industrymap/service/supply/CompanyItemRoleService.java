@@ -11,8 +11,8 @@ import com.profetai.industrymap.model.Item;
 import com.profetai.industrymap.payloads.supply.CreateCompanyItemRoleRequest;
 import com.profetai.industrymap.payloads.supply.SupplierResponse;
 import com.profetai.industrymap.repository.CompanyItemRoleRepository;
-import com.profetai.industrymap.repository.CompanyRepository;
 import com.profetai.industrymap.repository.ItemRepository;
+import com.profetai.industrymap.service.company.CompanyService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.log4j.Log4j2;
 import org.springframework.http.HttpStatus;
@@ -33,20 +33,22 @@ import java.util.Set;
 @RequiredArgsConstructor
 public class CompanyItemRoleService {
 
-    private final CompanyRepository companyRepository;
+    private final CompanyService companyService;
     private final ItemRepository itemRepository;
     private final CompanyItemRoleRepository companyItemRoleRepository;
 
     /**
      * 建立供應關係。
      *
+     * <p>公司以代號指定（design D5）：建完公司後拿到的就是代號，
+     * 呼叫端不必、也無從取得內部自增主鍵。</p>
+     *
      * @throws ServerException 公司或零件不存在（404）、同組公司零件角色重複（409）
      */
     @Transactional
     public CompanyItemRole create(CreateCompanyItemRoleRequest request) {
         ProvenanceValidator.validate(request.getProvenance());
-        Company company = companyRepository.findById(request.getCompanyId())
-                .orElseThrow(() -> new ServerException("查無此公司：" + request.getCompanyId(), HttpStatus.NOT_FOUND));
+        Company company = companyService.getByReference(request.getCompanyCode());
         Item item = itemRepository.findById(request.getItemId())
                 .orElseThrow(() -> new ServerException("查無此品類節點：" + request.getItemId(), HttpStatus.NOT_FOUND));
 
@@ -65,8 +67,8 @@ public class CompanyItemRoleService {
                 .build();
 
         CompanyItemRole saved = companyItemRoleRepository.save(role);
-        log.info("建立供應關係 companyId={} itemId={} role={}",
-                company.getId(), item.getId(), request.getCompanyRole());
+        log.info("建立供應關係 companyCode={} companyId={} itemId={} role={}",
+                request.getCompanyCode(), company.getId(), item.getId(), request.getCompanyRole());
         return saved;
     }
 
@@ -86,6 +88,10 @@ public class CompanyItemRoleService {
                 ? companyItemRoleRepository.findByItemIdAndReviewStatusIn(itemId, statuses)
                 : companyItemRoleRepository.findByItemIdAndCompanyRoleAndReviewStatusIn(
                         itemId, companyRole, statuses);
-        return roles.stream().map(SupplierResponse::from).toList();
+        // 關係本身通過審核，不代表它指向的公司還算數；公司被駁回時這筆供應關係一併不外露
+        return roles.stream()
+                .filter(role -> ReviewScopes.isExposable(role.getCompany().getReviewStatus()))
+                .map(SupplierResponse::from)
+                .toList();
     }
 }
