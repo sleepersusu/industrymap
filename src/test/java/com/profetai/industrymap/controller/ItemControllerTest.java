@@ -2,10 +2,12 @@ package com.profetai.industrymap.controller;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.profetai.industrymap.enums.Necessity;
+import com.profetai.industrymap.enums.ReviewStatus;
 import com.profetai.industrymap.enums.SourceType;
 import com.profetai.industrymap.exceptions.ServerException;
 import com.profetai.industrymap.model.Item;
 import com.profetai.industrymap.payloads.ProvenanceRequest;
+import com.profetai.industrymap.payloads.item.CompositionResponse;
 import com.profetai.industrymap.payloads.item.CreateCompositionRequest;
 import com.profetai.industrymap.payloads.item.CreateItemRequest;
 import com.profetai.industrymap.service.item.ItemCompositionService;
@@ -183,6 +185,43 @@ class ItemControllerTest {
     void getSuppliers_invalidRoleEnum_shouldReturnBadRequest() throws Exception {
         mockMvc.perform(get("/api/items/1/suppliers").param("role", "NOT_A_ROLE"))
                 .andExpect(status().isBadRequest());
+    }
+
+    @Test
+    @DisplayName("查節點組成關係應回傳上下層節點、必要性與審核狀態")
+    void getCompositions_existingRelations_shouldReturnBothEnds() throws Exception {
+        when(itemCompositionService.findCompositions(1L, false)).thenReturn(List.of(
+                CompositionResponse.builder().id(7L).parentItemId(1L).childItemId(2L)
+                        .necessity(Necessity.STANDARD).reviewStatus(ReviewStatus.VERIFIED).build()));
+
+        mockMvc.perform(get("/api/items/1/compositions"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.length()").value(1))
+                .andExpect(jsonPath("$.data[0].parentItemId").value(1))
+                .andExpect(jsonPath("$.data[0].childItemId").value(2))
+                .andExpect(jsonPath("$.data[0].necessity").value("STANDARD"))
+                .andExpect(jsonPath("$.data[0].reviewStatus").value("VERIFIED"));
+    }
+
+    @Test
+    @DisplayName("查節點組成關係指定納入草稿時應以含草稿的範圍查詢")
+    void getCompositions_includeDrafts_shouldQueryWithDraftScope() throws Exception {
+        when(itemCompositionService.findCompositions(1L, true)).thenReturn(List.of());
+
+        mockMvc.perform(get("/api/items/1/compositions").param("includeDrafts", "true"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data").isEmpty());
+    }
+
+    @Test
+    @DisplayName("查無此節點的組成關係時應回傳 404")
+    void getCompositions_unknownItem_shouldReturnNotFound() throws Exception {
+        when(itemCompositionService.findCompositions(99L, false))
+                .thenThrow(new ServerException("查無此品類節點：99", HttpStatus.NOT_FOUND));
+
+        mockMvc.perform(get("/api/items/99/compositions"))
+                .andExpect(status().isNotFound())
+                .andExpect(jsonPath("$.success").value(false));
     }
 
     private CreateItemRequest createItemRequest(String displayName) {

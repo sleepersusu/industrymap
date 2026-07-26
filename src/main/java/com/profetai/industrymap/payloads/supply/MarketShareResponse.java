@@ -27,7 +27,7 @@ public class MarketShareResponse {
     @Schema(description = "公司顯示名稱")
     private String companyName;
 
-    @Schema(description = "公司的路徑識別（正規化名稱）")
+    @Schema(description = "公司的對外識別：主要代號，無識別碼的公司則為正規化名稱", example = "2330")
     private String companyReference;
 
     @Schema(description = "市佔百分比", example = "70.5")
@@ -54,10 +54,13 @@ public class MarketShareResponse {
     @Schema(description = "審核狀態")
     private ReviewStatus reviewStatus;
 
-    public static MarketShareResponse from(MarketShare marketShare) {
+    /**
+     * @param companyReference 公司對外識別，由 {@code CompanyReferences} 統一組出（design D4）
+     */
+    public static MarketShareResponse from(MarketShare marketShare, String companyReference) {
         return MarketShareResponse.builder()
                 .companyName(marketShare.getCompany().getDisplayName())
-                .companyReference(marketShare.getCompany().getNormalizedName())
+                .companyReference(companyReference)
                 .sharePercent(marketShare.getSharePercent())
                 .periodType(marketShare.getPeriodType())
                 .periodValue(marketShare.getPeriodValue())

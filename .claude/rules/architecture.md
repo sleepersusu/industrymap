@@ -46,6 +46,11 @@ PostgreSQL / RabbitMQ（或等效 queue）/ Redis（快取）/ 外部資料來�
 `is-a` 走 `item.parent_category_id`（單一欄位、至多一個上層品類）。混在一張表無法用 constraint
 守住「is-a 不會有多重上層」，因此分開儲存也分開回傳。
 
+**審核目標可用自然鍵定位**：查詢回應刻意不曝露公司內部 id，若審核只收 id，就會有資料進得去、
+出不來的類型（公司識別碼即是）。因此審核端點同時支援內部 id 與自然鍵，各類型的自然鍵即其資料庫唯一鍵，
+解析集中在 `service.review.NaturalKeyResolver` 一處（新增內容表時只要多註冊一行）。
+批次建立端點（`service.bulk`）的回應一併回傳同一組自然鍵，讓「建立 → 審核」兩次呼叫就走得完。
+
 **跨表限制由 service 把關**：別名不得撞到其他節點／公司的正規化名稱、組成關係不得形成循環，
 這兩者 PostgreSQL 都表達不了，一律走 service（`ItemService`、`ItemCompositionService`）。
 繞過 service 直接寫 DB 就會失效，日後的批次匯入必須共用同一組檢查。
@@ -54,13 +59,13 @@ PostgreSQL / RabbitMQ（或等效 queue）/ Redis（快取）/ 外部資料來�
 
 | Package | 職責 |
 |---------|------|
-| `controller` ★ | REST API 入口，`@Valid` 驗證，回 `ServerResponse<T>`；`ProductController`、`ItemController`、`CompanyController`、`SupplyRelationController`、`ReviewController` |
-| `service` ★ | 業務邏輯，依領域切分：`service.item`、`service.company`、`service.supply`、`service.review`。**單一 service 上限 500 行，超過就拆** |
+| `controller` ★ | REST API 入口，`@Valid` 驗證，回 `ServerResponse<T>`；`ProductController`、`ItemController`、`CompanyController`、`SupplyRelationController`、`ReviewController`、`BulkAuthoringController` |
+| `service` ★ | 業務邏輯，依領域切分：`service.item`、`service.company`、`service.supply`、`service.review`、`service.bulk`。**單一 service 上限 500 行，超過就拆** |
 | `repository` ★ | Spring Data JPA 資料存取。**SQL 一律寫在這層，service 只呼叫；手寫查詢用 `@Query(nativeQuery = true)`，enum 以字串傳入** |
 | `model` ★ | JPA Entity（`Item`、`ItemAlias`、`ItemComposition`、`Company`、`CompanyAlias`、`CompanyIdentifier`、`CompanyItemRole`、`MarketShare`、`ProvenanceEntity`） |
-| `payloads` ★ | API request / response 契約（複數，對齊 `ais-backend` 慣例）；依領域分 `payloads.item`、`payloads.company`、`payloads.supply`、`payloads.review`。含 `ServerResponses` 這層 `ResponseEntity` 包裝，讓 controller 不重複樣板 |
+| `payloads` ★ | API request / response 契約（複數，對齊 `ais-backend` 慣例）；依領域分 `payloads.item`、`payloads.company`、`payloads.supply`、`payloads.review`、`payloads.bulk`。含 `ServerResponses` 這層 `ResponseEntity` 包裝，讓 controller 不重複樣板 |
 | `enums` ★ | `SourceType`、`ReviewStatus`、`ReviewTargetType`、`CompanyRole`、`Necessity`、`IdentifierType`、`ShareMetric`、`PeriodType` |
-| `helper` ★ | `ProvenanceValidator`（來源欄位共用驗證）、`ReviewScopes`（查詢的審核範圍） |
+| `helper` ★ | `ProvenanceValidator`（來源欄位共用驗證）、`ReviewScopes`（查詢的審核範圍）、`CompanyReferences`（公司對外識別的唯一組裝規則） |
 | `util` ★ | `NameNormalizer`（名稱正規化，無外部相依） |
 | `clients` | 外部資料來源封裝：股價行情 API、新聞來源 API、專利檢索（如智慧財產局 / Google Patents）、公司登記 / 公開資訊觀測站 API |
 | `job` | 背景任務：`config`（queue 設定）、`producer`、`consumer`、`scheduler`、`service`——用於定期同步股價 / 新聞 / 專利 |

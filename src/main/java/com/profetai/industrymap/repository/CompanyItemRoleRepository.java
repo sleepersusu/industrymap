@@ -7,6 +7,7 @@ import org.springframework.data.jpa.repository.JpaRepository;
 
 import java.util.Collection;
 import java.util.List;
+import java.util.Optional;
 
 public interface CompanyItemRoleRepository extends JpaRepository<CompanyItemRole, Long> {
 
@@ -17,4 +18,8 @@ public interface CompanyItemRoleRepository extends JpaRepository<CompanyItemRole
                                                                      Collection<ReviewStatus> reviewStatuses);
 
     boolean existsByCompanyIdAndItemIdAndCompanyRole(Long companyId, Long itemId, CompanyRole companyRole);
+
+    /** 以自然鍵（公司 + 零件 + 角色）定位單筆供應關係，供審核端點使用（design D1） */
+    Optional<CompanyItemRole> findByCompanyIdAndItemIdAndCompanyRole(Long companyId, Long itemId,
+                                                                    CompanyRole companyRole);
 }

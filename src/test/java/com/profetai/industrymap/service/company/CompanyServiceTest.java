@@ -24,12 +24,15 @@ import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.http.HttpStatus;
 
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
+import java.util.Set;
 
 import static org.junit.jupiter.api.Assertions.assertAll;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.lenient;
 import static org.mockito.Mockito.mock;
@@ -283,6 +286,83 @@ class CompanyServiceTest {
         when(companyIdentifierRepository.findByCompanyId(1L)).thenReturn(List.of(valid, rejected));
 
         assertEquals(List.of(valid), companyService.findVisibleIdentifiers(1L));
+    }
+
+    @Test
+    @DisplayName("取得公司對外識別時有主要代號應回代號")
+    void referenceOf_withPrimaryIdentifier_shouldReturnIdentifierValue() {
+        CompanyIdentifier primary = CompanyIdentifier.builder()
+                .id(1L).company(tsmc).identifierType(IdentifierType.TWSE).identifierValue("2330")
+                .isPrimary(true).build();
+        when(companyIdentifierRepository.findByCompanyId(1L)).thenReturn(List.of(primary));
+
+        assertEquals("2330", companyService.referenceOf(tsmc));
+    }
+
+    @Test
+    @DisplayName("取得公司對外識別時無識別碼應退回正規化名稱")
+    void referenceOf_withoutIdentifier_shouldFallBackToNormalizedName() {
+        when(companyIdentifierRepository.findByCompanyId(1L)).thenReturn(List.of());
+
+        assertEquals("台積電", companyService.referenceOf(tsmc));
+    }
+
+    @Test
+    @DisplayName("批次取得對外識別時應一次查主要識別碼，有代號者回代號、無代號者回名稱")
+    void referencesOf_mixedCompanies_shouldResolveEachInSingleQuery() {
+        // Given：台積電有主要代號，桂盟沒有登記任何識別碼
+        CompanyIdentifier primary = CompanyIdentifier.builder()
+                .id(1L).company(tsmc).identifierType(IdentifierType.TWSE).identifierValue("2330")
+                .isPrimary(true).build();
+        when(companyIdentifierRepository.findByCompanyIdInAndIsPrimaryTrue(Set.of(1L, 4L)))
+                .thenReturn(List.of(primary));
+
+        // When：同一家公司出現兩次（同一零件的兩個角色），不應重複查詢
+        Map<Long, String> references = companyService.referencesOf(List.of(tsmc, kmc, tsmc));
+
+        // Then
+        assertAll(
+                () -> assertEquals(2, references.size()),
+                () -> assertEquals("2330", references.get(1L)),
+                () -> assertEquals("桂盟國際", references.get(4L)));
+    }
+
+    @Test
+    @DisplayName("有主要代號的公司，其對外識別應可直接用於依代號查詢")
+    void referenceOf_withPrimaryIdentifier_shouldBeQueryableByReference() {
+        // Given
+        CompanyIdentifier primary = CompanyIdentifier.builder()
+                .id(1L).company(tsmc).identifierType(IdentifierType.TWSE).identifierValue("2330")
+                .isPrimary(true).build();
+        when(companyIdentifierRepository.findByCompanyId(1L)).thenReturn(List.of(primary));
+        when(companyIdentifierRepository.findByIdentifierValue("2330")).thenReturn(List.of(primary));
+        when(companyRepository.findById(1L)).thenReturn(Optional.of(tsmc));
+
+        // When：把回應裡的對外識別原封不動拿去查詢
+        String reference = companyService.referenceOf(tsmc);
+
+        // Then
+        assertEquals(tsmc, companyService.getByReference(reference));
+    }
+
+    @Test
+    @DisplayName("無識別碼的公司，其對外識別（正規化名稱）同樣應可直接用於查詢")
+    void referenceOf_withoutIdentifier_shouldBeQueryableByReference() {
+        when(companyIdentifierRepository.findByCompanyId(4L)).thenReturn(List.of());
+        when(companyIdentifierRepository.findByIdentifierValue("桂盟國際")).thenReturn(List.of());
+        when(companyRepository.findByNormalizedName("桂盟國際")).thenReturn(Optional.of(kmc));
+
+        String reference = companyService.referenceOf(kmc);
+
+        assertEquals(kmc, companyService.getByReference(reference));
+    }
+
+    @Test
+    @DisplayName("批次取得對外識別時輸入為空應直接回空 Map 不查資料庫")
+    void referencesOf_emptyInput_shouldReturnEmptyMapWithoutQuery() {
+        assertAll(
+                () -> assertTrue(companyService.referencesOf(List.of()).isEmpty()),
+                () -> verify(companyIdentifierRepository, never()).findByCompanyIdInAndIsPrimaryTrue(any()));
     }
 
     private CreateIdentifierRequest identifierRequest(IdentifierType type, String value, boolean primary) {

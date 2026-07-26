@@ -22,6 +22,7 @@ import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.http.HttpStatus;
 
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
 
@@ -190,6 +191,43 @@ class CompanyItemRoleServiceTest {
         assertAll(
                 () -> assertEquals(1, suppliers.size()),
                 () -> assertEquals("台積電", suppliers.get(0).getCompanyName()));
+    }
+
+    @Test
+    @DisplayName("有主要代號的公司作為供應商時對外識別應為代號而非正規化名稱")
+    void findSuppliers_companyWithPrimaryIdentifier_shouldExposeIdentifierValue() {
+        // Given：台積電有主要代號 2330，對外識別必須與 CompanyResponse.reference 同一個值（design D4）
+        CompanyItemRole manufacture = CompanyItemRole.builder()
+                .company(tsmc).item(chip).companyRole(CompanyRole.MANUFACTURE).build();
+        when(companyItemRoleRepository.findByItemIdAndReviewStatusIn(2L, Set.of(ReviewStatus.VERIFIED)))
+                .thenReturn(List.of(manufacture));
+        when(companyService.referencesOf(List.of(tsmc))).thenReturn(Map.of(1L, TSMC_CODE));
+
+        // When
+        List<SupplierResponse> suppliers = companyItemRoleService.findSuppliers(2L, null, false);
+
+        // Then
+        assertAll(
+                () -> assertEquals(1, suppliers.size()),
+                () -> assertEquals(TSMC_CODE, suppliers.get(0).getCompanyReference()));
+    }
+
+    @Test
+    @DisplayName("無任何識別碼的公司作為供應商時對外識別應退回正規化名稱")
+    void findSuppliers_companyWithoutIdentifier_shouldFallBackToNormalizedName() {
+        // Given：SRAM 是未上市公司，沒有任何代號
+        Company sram = Company.builder().id(5L).normalizedName("sram").displayName("SRAM").build();
+        CompanyItemRole manufacture = CompanyItemRole.builder()
+                .company(sram).item(chip).companyRole(CompanyRole.MANUFACTURE).build();
+        when(companyItemRoleRepository.findByItemIdAndReviewStatusIn(2L, Set.of(ReviewStatus.VERIFIED)))
+                .thenReturn(List.of(manufacture));
+        when(companyService.referencesOf(List.of(sram))).thenReturn(Map.of(5L, "sram"));
+
+        // When
+        List<SupplierResponse> suppliers = companyItemRoleService.findSuppliers(2L, null, false);
+
+        // Then
+        assertEquals("sram", suppliers.get(0).getCompanyReference());
     }
 
     private void givenCompanyAndItem() {

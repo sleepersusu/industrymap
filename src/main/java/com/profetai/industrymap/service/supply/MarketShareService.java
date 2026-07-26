@@ -21,6 +21,7 @@ import org.springframework.transaction.annotation.Transactional;
 
 import java.math.BigDecimal;
 import java.util.List;
+import java.util.Map;
 
 /**
  * 市佔率的寫入與排名查詢（design D7）。
@@ -95,10 +96,16 @@ public class MarketShareService {
     public List<MarketShareResponse> findRanking(Long itemId, PeriodType periodType, String periodValue,
                                                  String region, ShareMetric metric, boolean includeDrafts) {
         // 市佔率本身通過審核，不代表它指向的公司還算數；公司被駁回時這筆數字一併不外露
-        return marketShareRepository.findRanking(itemId, periodType.name(), periodValue, region, metric.name(),
-                        ReviewScopes.visibleStatusNames(includeDrafts)).stream()
+        List<MarketShare> visible = marketShareRepository.findRanking(itemId, periodType.name(), periodValue,
+                        region, metric.name(), ReviewScopes.visibleStatusNames(includeDrafts)).stream()
                 .filter(share -> ReviewScopes.isExposable(share.getCompany().getReviewStatus()))
-                .map(MarketShareResponse::from)
+                .toList();
+
+        // 對外識別一次批次解析，避免逐筆查主要識別碼造成 N+1（design D4）
+        Map<Long, String> references =
+                companyService.referencesOf(visible.stream().map(MarketShare::getCompany).toList());
+        return visible.stream()
+                .map(share -> MarketShareResponse.from(share, references.get(share.getCompany().getId())))
                 .toList();
     }
 

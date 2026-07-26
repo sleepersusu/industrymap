@@ -1,7 +1,7 @@
 {
   "_type": "export",
   "__export_format": 4,
-  "__export_date": "2026-07-26T03:10:00.000Z",
+  "__export_date": "2026-07-26T15:00:00.000Z",
   "__export_source": "industrymap.controller-scan",
   "resources": [
     {
@@ -10,7 +10,7 @@
       "modified": 1753500000000,
       "created": 1753500000000,
       "name": "industrymap API",
-      "description": "由 src/main/java/com/profetai/industrymap/controller 的實際 @RequestMapping 產出。\n\n使用順序建議：\n1. 先跑「01 Item 品類節點 → 建立品類節點（終端成品）」與「建立品類節點（零件）」，把回傳的 id 填進環境變數 itemId / childItemId。\n2. 再跑「02 Company 公司 → 建立公司」與「登記公司識別碼」，把 id 填進 companyId。\n3. 之後即可跑組成關係、供應關係、市佔率與各查詢端點。",
+      "description": "由 src/main/java/com/profetai/industrymap/controller 的實際 @RequestMapping 產出。\n\n使用順序建議（批次路線，7 次呼叫建完一台腳踏車）：\n1. 「07 Bulk 批次建立」依序跑 items → compositions → companies → identifiers → supply-roles → market-shares，每支的回應都帶 targetId 與 naturalKey。\n2. 把各回應中成功項目的 targetType 與 naturalKey 貼進「05 Review 審核 → 批次審核——以自然鍵定位」，一次審完。\n3. 之後即可跑組成樹、供應商、市佔率等查詢端點。\n\n單筆路線（01–04 各資料夾）仍完整可用，適合逐支端點驗證行為。",
       "scope": "collection",
       "_type": "workspace"
     },
@@ -471,7 +471,7 @@
       "created": 1753500000000,
       "url": "{{ _.baseUrl }}/api/companies/{{ _.companyCode }}",
       "name": "依代號取得公司",
-      "description": "GET /api/companies/{code} — 200 成功／404 查無此代號。\n回傳公司資料與其所有識別碼。未上市公司以正規化名稱作為代號位置的識別。\n\n⚠️ 已知問題（2026-07-26 實測）：以識別碼（如 2330）查詢目前會回 500 LazyInitializationException，改填正規化公司名稱才會回 200。原因在 CompanyService.getByReference 回傳的是未初始化的 lazy proxy，詳見 ~/.claude/dev-errors/error-log.md。",
+      "description": "GET /api/companies/{code} — 200 成功／404 查無此代號。\n回傳公司資料與其所有識別碼。未上市公司以正規化名稱作為代號位置的識別。\n回應的 reference 與供應商、市佔率回應的 companyReference 是同一個值（優先主要代號，無代號才退回正規化名稱），取任一個回頭查這支都查得到。",
       "method": "GET",
       "body": {},
       "parameters": [],
@@ -897,7 +897,7 @@
       "modified": 1753500000000,
       "created": 1753500000000,
       "name": "05 Review 審核",
-      "description": "ReviewController：/api/reviews。八張內容表共用同一組端點，以「資料類型 + 識別碼」指定目標。\n支援類型：ITEM / ITEM_ALIAS / ITEM_COMPOSITION / COMPANY / COMPANY_ALIAS / COMPANY_IDENTIFIER / COMPANY_ITEM_ROLE / MARKET_SHARE。\n寫入端點一律建為草稿，對外查詢預設只回已驗證，因此建完資料後必須經這裡審核才查得到。",
+      "description": "ReviewController：/api/reviews。八張內容表共用同一組端點。\n目標可用內部 id（targetId）或自然鍵（naturalKey）定位，擇一即可；兩者同時提供時以 targetId 為準。\n自然鍵：ITEM/ITEM_ALIAS/COMPANY_ALIAS 用 name、ITEM_COMPOSITION 用 parentItemId+childItemId、COMPANY 用 companyCode、COMPANY_IDENTIFIER 用 identifierType+identifierValue、COMPANY_ITEM_ROLE 用 companyCode+itemId+companyRole、MARKET_SHARE 用 companyCode+itemId+periodType+periodValue+region+metric+sourceDetail。\n寫入端點一律建為草稿，對外查詢預設只回已驗證，因此建完資料後必須經這裡審核才查得到。",
       "environment": {},
       "environmentPropertyOrder": null,
       "metaSortKey": -650,
@@ -1112,6 +1112,393 @@
       "headers": [
         {
           "id": "pair_h_req_review_empty_batch",
+          "name": "Content-Type",
+          "value": "application/json"
+        }
+      ],
+      "authentication": {},
+      "metaSortKey": -400,
+      "isPrivate": false,
+      "settingStoreCookies": true,
+      "settingSendCookies": true,
+      "settingDisableRenderRequestBody": false,
+      "settingEncodeUrl": true,
+      "settingRebuildPath": true,
+      "settingFollowRedirects": "global",
+      "_type": "request"
+    },
+    {
+      "_id": "req_item_compositions",
+      "parentId": "fld_item",
+      "modified": 1753500000000,
+      "created": 1753500000000,
+      "url": "{{ _.baseUrl }}/api/items/{{ _.itemId }}/compositions",
+      "name": "查節點的組成關係",
+      "description": "GET /api/items/{id}/compositions — 200 成功（無資料回空清單）／404 查無此節點。\n逐筆回傳 parentItemId、childItemId、necessity 與 reviewStatus。組成樹只給節點 id，這支才拿得到關係本身的定位資訊；審核組成關係時用回傳的上下層節點當自然鍵即可。\nincludeDrafts=true 可一併看草稿；已駁回一律不外露。",
+      "method": "GET",
+      "body": {},
+      "parameters": [],
+      "headers": [],
+      "authentication": {},
+      "metaSortKey": -450,
+      "isPrivate": false,
+      "settingStoreCookies": true,
+      "settingSendCookies": true,
+      "settingDisableRenderRequestBody": false,
+      "settingEncodeUrl": true,
+      "settingRebuildPath": true,
+      "settingFollowRedirects": "global",
+      "_type": "request"
+    },
+    {
+      "_id": "req_review_natural_key",
+      "parentId": "fld_review",
+      "modified": 1753500000000,
+      "created": 1753500000000,
+      "url": "{{ _.baseUrl }}/api/reviews",
+      "name": "審核單筆——以自然鍵定位公司識別碼",
+      "description": "POST /api/reviews — 200 審核完成／400 兩種定位皆未提供或自然鍵欄位不足／404 自然鍵查無資料。\n公司識別碼的查詢回應完全不含內部 id，這一類只能用自然鍵定位（識別碼類型 + 代號值）。",
+      "method": "POST",
+      "body": {
+        "mimeType": "application/json",
+        "text": "{\n  \"targetType\": \"COMPANY_IDENTIFIER\",\n  \"naturalKey\": {\n    \"identifierType\": \"TWSE\",\n    \"identifierValue\": \"{{ _.companyCode }}\"\n  },\n  \"targetStatus\": \"VERIFIED\",\n  \"reviewer\": \"{{ _.reviewer }}\"\n}"
+      },
+      "parameters": [],
+      "headers": [
+        {
+          "id": "pair_h_req_review_natural_key",
+          "name": "Content-Type",
+          "value": "application/json"
+        }
+      ],
+      "authentication": {},
+      "metaSortKey": -950,
+      "isPrivate": false,
+      "settingStoreCookies": true,
+      "settingSendCookies": true,
+      "settingDisableRenderRequestBody": false,
+      "settingEncodeUrl": true,
+      "settingRebuildPath": true,
+      "settingFollowRedirects": "global",
+      "_type": "request"
+    },
+    {
+      "_id": "req_review_batch_natural_key",
+      "parentId": "fld_review",
+      "modified": 1753500000000,
+      "created": 1753500000000,
+      "url": "{{ _.baseUrl }}/api/reviews/batch",
+      "name": "批次審核——以自然鍵定位（可直接貼上批次建立回應）",
+      "description": "POST /api/reviews/batch — 200 逐筆回報。\n各筆可分別用 targetId 或 naturalKey。批次建立端點（07 Bulk）回應中每筆成功項目的 targetType 與 naturalKey 可原封不動搬進 targets，不需再查任何端點。",
+      "method": "POST",
+      "body": {
+        "mimeType": "application/json",
+        "text": "{\n  \"targets\": [\n    {\n      \"targetType\": \"ITEM\",\n      \"naturalKey\": { \"name\": \"腳踏車\" }\n    },\n    {\n      \"targetType\": \"ITEM_COMPOSITION\",\n      \"naturalKey\": { \"parentItemId\": {{ _.itemId }}, \"childItemId\": {{ _.childItemId }} }\n    },\n    {\n      \"targetType\": \"COMPANY_IDENTIFIER\",\n      \"naturalKey\": { \"identifierType\": \"TWSE\", \"identifierValue\": \"{{ _.companyCode }}\" }\n    },\n    {\n      \"targetType\": \"COMPANY_ITEM_ROLE\",\n      \"naturalKey\": { \"companyCode\": \"{{ _.supplierCompanyCode }}\", \"itemId\": {{ _.childItemId }}, \"companyRole\": \"MANUFACTURE\" }\n    }\n  ],\n  \"targetStatus\": \"VERIFIED\",\n  \"reviewer\": \"{{ _.reviewer }}\"\n}"
+      },
+      "parameters": [],
+      "headers": [
+        {
+          "id": "pair_h_req_review_batch_natural_key",
+          "name": "Content-Type",
+          "value": "application/json"
+        }
+      ],
+      "authentication": {},
+      "metaSortKey": -690,
+      "isPrivate": false,
+      "settingStoreCookies": true,
+      "settingSendCookies": true,
+      "settingDisableRenderRequestBody": false,
+      "settingEncodeUrl": true,
+      "settingRebuildPath": true,
+      "settingFollowRedirects": "global",
+      "_type": "request"
+    },
+    {
+      "_id": "req_review_no_locator",
+      "parentId": "fld_review",
+      "modified": 1753500000000,
+      "created": 1753500000000,
+      "url": "{{ _.baseUrl }}/api/reviews",
+      "name": "400 — 未提供 targetId 也未提供 naturalKey",
+      "description": "預期 400：兩種定位方式必須擇一提供，否則無從得知要審哪一筆。",
+      "method": "POST",
+      "body": {
+        "mimeType": "application/json",
+        "text": "{\n  \"targetType\": \"ITEM\",\n  \"targetStatus\": \"VERIFIED\",\n  \"reviewer\": \"{{ _.reviewer }}\"\n}"
+      },
+      "parameters": [],
+      "headers": [
+        {
+          "id": "pair_h_req_review_no_locator",
+          "name": "Content-Type",
+          "value": "application/json"
+        }
+      ],
+      "authentication": {},
+      "metaSortKey": -560,
+      "isPrivate": false,
+      "settingStoreCookies": true,
+      "settingSendCookies": true,
+      "settingDisableRenderRequestBody": false,
+      "settingEncodeUrl": true,
+      "settingRebuildPath": true,
+      "settingFollowRedirects": "global",
+      "_type": "request"
+    },
+    {
+      "_id": "req_review_incomplete_key",
+      "parentId": "fld_review",
+      "modified": 1753500000000,
+      "created": 1753500000000,
+      "url": "{{ _.baseUrl }}/api/reviews",
+      "name": "400 — 市佔率自然鍵缺少維度",
+      "description": "預期 400：市佔率的自然鍵有六個欄位，少一個就定位不到；回應訊息會列出缺少哪些維度。",
+      "method": "POST",
+      "body": {
+        "mimeType": "application/json",
+        "text": "{\n  \"targetType\": \"MARKET_SHARE\",\n  \"naturalKey\": {\n    \"companyCode\": \"{{ _.supplierCompanyCode }}\",\n    \"itemId\": {{ _.childItemId }}\n  },\n  \"targetStatus\": \"VERIFIED\",\n  \"reviewer\": \"{{ _.reviewer }}\"\n}"
+      },
+      "parameters": [],
+      "headers": [
+        {
+          "id": "pair_h_req_review_incomplete_key",
+          "name": "Content-Type",
+          "value": "application/json"
+        }
+      ],
+      "authentication": {},
+      "metaSortKey": -550,
+      "isPrivate": false,
+      "settingStoreCookies": true,
+      "settingSendCookies": true,
+      "settingDisableRenderRequestBody": false,
+      "settingEncodeUrl": true,
+      "settingRebuildPath": true,
+      "settingFollowRedirects": "global",
+      "_type": "request"
+    },
+    {
+      "_id": "fld_bulk",
+      "parentId": "wrk_industrymap",
+      "modified": 1753500000000,
+      "created": 1753500000000,
+      "name": "07 Bulk 批次建立",
+      "description": "BulkAuthoringController：/api/bulk。一次送多筆同類型資料，逐筆回報成功或失敗原因；個別失敗不影響其他項目，因此整體一律回 200。\n每筆成功項目帶 targetType 與 naturalKey，可直接組成「05 Review 審核 → 批次審核——以自然鍵定位」的 targets。\n建一台腳踏車的順序：items → compositions → companies → identifiers → supply-roles → market-shares，最後批次審核一次。",
+      "environment": {},
+      "environmentPropertyOrder": null,
+      "metaSortKey": -600,
+      "_type": "request_group"
+    },
+    {
+      "_id": "req_bulk_items",
+      "parentId": "fld_bulk",
+      "modified": 1753500000000,
+      "created": 1753500000000,
+      "url": "{{ _.baseUrl }}/api/bulk/items",
+      "name": "批次建立品類節點",
+      "description": "POST /api/bulk/items — 200 逐筆回報／400 空批次或欄位驗證失敗。\n名稱重複的那筆回報 409，其餘照常建立；同一批次內兩筆同名時第一筆成功、第二筆回 409。\n回應的 targetId 即後續組成關係要用的 item id。",
+      "method": "POST",
+      "body": {
+        "mimeType": "application/json",
+        "text": "{\n  \"items\": [\n    {\n      \"displayName\": \"腳踏車\",\n      \"endProduct\": true,\n      \"provenance\": { \"sourceType\": \"AI_GENERATED\", \"sourceDetail\": \"claude-opus-5\", \"confidence\": 0.9 }\n    },\n    {\n      \"displayName\": \"變速器\",\n      \"endProduct\": false,\n      \"provenance\": { \"sourceType\": \"AI_GENERATED\", \"sourceDetail\": \"claude-opus-5\", \"confidence\": 0.85 }\n    }\n  ]\n}"
+      },
+      "parameters": [],
+      "headers": [
+        {
+          "id": "pair_h_req_bulk_items",
+          "name": "Content-Type",
+          "value": "application/json"
+        }
+      ],
+      "authentication": {},
+      "metaSortKey": -1000,
+      "isPrivate": false,
+      "settingStoreCookies": true,
+      "settingSendCookies": true,
+      "settingDisableRenderRequestBody": false,
+      "settingEncodeUrl": true,
+      "settingRebuildPath": true,
+      "settingFollowRedirects": "global",
+      "_type": "request"
+    },
+    {
+      "_id": "req_bulk_compositions",
+      "parentId": "fld_bulk",
+      "modified": 1753500000000,
+      "created": 1753500000000,
+      "url": "{{ _.baseUrl }}/api/bulk/compositions",
+      "name": "批次建立組成關係",
+      "description": "POST /api/bulk/compositions — 200 逐筆回報／400 空批次或欄位驗證失敗。\n各筆自帶 parentItemId（單筆端點是放在路徑上）；會造成循環或已存在的關係回報 409。",
+      "method": "POST",
+      "body": {
+        "mimeType": "application/json",
+        "text": "{\n  \"items\": [\n    {\n      \"parentItemId\": {{ _.itemId }},\n      \"childItemId\": {{ _.childItemId }},\n      \"necessity\": \"STANDARD\",\n      \"provenance\": { \"sourceType\": \"AI_GENERATED\", \"sourceDetail\": \"claude-opus-5\", \"confidence\": 0.8 }\n    }\n  ]\n}"
+      },
+      "parameters": [],
+      "headers": [
+        {
+          "id": "pair_h_req_bulk_compositions",
+          "name": "Content-Type",
+          "value": "application/json"
+        }
+      ],
+      "authentication": {},
+      "metaSortKey": -900,
+      "isPrivate": false,
+      "settingStoreCookies": true,
+      "settingSendCookies": true,
+      "settingDisableRenderRequestBody": false,
+      "settingEncodeUrl": true,
+      "settingRebuildPath": true,
+      "settingFollowRedirects": "global",
+      "_type": "request"
+    },
+    {
+      "_id": "req_bulk_companies",
+      "parentId": "fld_bulk",
+      "modified": 1753500000000,
+      "created": 1753500000000,
+      "url": "{{ _.baseUrl }}/api/bulk/companies",
+      "name": "批次建立公司",
+      "description": "POST /api/bulk/companies — 200 逐筆回報／400 空批次或欄位驗證失敗。\n未上市公司可不帶任何識別碼；回應的 naturalKey.companyCode 是該公司當下的對外識別（此時為正規化名稱）。",
+      "method": "POST",
+      "body": {
+        "mimeType": "application/json",
+        "text": "{\n  \"items\": [\n    {\n      \"displayName\": \"禧瑪諾\",\n      \"country\": \"JP\",\n      \"publicCompany\": true,\n      \"provenance\": { \"sourceType\": \"MANUAL\" }\n    }\n  ]\n}"
+      },
+      "parameters": [],
+      "headers": [
+        {
+          "id": "pair_h_req_bulk_companies",
+          "name": "Content-Type",
+          "value": "application/json"
+        }
+      ],
+      "authentication": {},
+      "metaSortKey": -800,
+      "isPrivate": false,
+      "settingStoreCookies": true,
+      "settingSendCookies": true,
+      "settingDisableRenderRequestBody": false,
+      "settingEncodeUrl": true,
+      "settingRebuildPath": true,
+      "settingFollowRedirects": "global",
+      "_type": "request"
+    },
+    {
+      "_id": "req_bulk_identifiers",
+      "parentId": "fld_bulk",
+      "modified": 1753500000000,
+      "created": 1753500000000,
+      "url": "{{ _.baseUrl }}/api/bulk/identifiers",
+      "name": "批次登記公司識別碼",
+      "description": "POST /api/bulk/identifiers — 200 逐筆回報／400 空批次或欄位驗證失敗。\n各筆自帶 companyCode；代號已被登記或該公司已有主要識別碼時回報 409。\n登記主要識別碼後，該公司的對外識別會從正規化名稱改為此代號。",
+      "method": "POST",
+      "body": {
+        "mimeType": "application/json",
+        "text": "{\n  \"items\": [\n    {\n      \"companyCode\": \"禧瑪諾\",\n      \"identifierType\": \"TSE\",\n      \"identifierValue\": \"7309\",\n      \"primary\": true,\n      \"provenance\": { \"sourceType\": \"MANUAL\" }\n    }\n  ]\n}"
+      },
+      "parameters": [],
+      "headers": [
+        {
+          "id": "pair_h_req_bulk_identifiers",
+          "name": "Content-Type",
+          "value": "application/json"
+        }
+      ],
+      "authentication": {},
+      "metaSortKey": -700,
+      "isPrivate": false,
+      "settingStoreCookies": true,
+      "settingSendCookies": true,
+      "settingDisableRenderRequestBody": false,
+      "settingEncodeUrl": true,
+      "settingRebuildPath": true,
+      "settingFollowRedirects": "global",
+      "_type": "request"
+    },
+    {
+      "_id": "req_bulk_supply_roles",
+      "parentId": "fld_bulk",
+      "modified": 1753500000000,
+      "created": 1753500000000,
+      "url": "{{ _.baseUrl }}/api/bulk/supply-roles",
+      "name": "批次建立供應角色",
+      "description": "POST /api/bulk/supply-roles — 200 逐筆回報／400 空批次或欄位驗證失敗。\n同一組公司零件可有多個角色，同角色重複才算衝突（409）。\n回應的 naturalKey.companyCode 一律是統一規則下的對外識別，不一定等於你送出的值。",
+      "method": "POST",
+      "body": {
+        "mimeType": "application/json",
+        "text": "{\n  \"items\": [\n    {\n      \"companyCode\": \"{{ _.supplierCompanyCode }}\",\n      \"itemId\": {{ _.childItemId }},\n      \"companyRole\": \"MANUFACTURE\",\n      \"provenance\": { \"sourceType\": \"EXTERNAL\", \"sourceDetail\": \"公司年報\" }\n    }\n  ]\n}"
+      },
+      "parameters": [],
+      "headers": [
+        {
+          "id": "pair_h_req_bulk_supply_roles",
+          "name": "Content-Type",
+          "value": "application/json"
+        }
+      ],
+      "authentication": {},
+      "metaSortKey": -600,
+      "isPrivate": false,
+      "settingStoreCookies": true,
+      "settingSendCookies": true,
+      "settingDisableRenderRequestBody": false,
+      "settingEncodeUrl": true,
+      "settingRebuildPath": true,
+      "settingFollowRedirects": "global",
+      "_type": "request"
+    },
+    {
+      "_id": "req_bulk_market_shares",
+      "parentId": "fld_bulk",
+      "modified": 1753500000000,
+      "created": 1753500000000,
+      "url": "{{ _.baseUrl }}/api/bulk/market-shares",
+      "name": "批次寫入市佔率",
+      "description": "POST /api/bulk/market-shares — 200 逐筆回報／400 空批次或欄位驗證失敗。\n不同來源對同一組維度的數值可並存，同來源重複才算衝突（409）。\n回應的 naturalKey 帶完整六維度加 sourceDetail，即審核時要用的自然鍵。",
+      "method": "POST",
+      "body": {
+        "mimeType": "application/json",
+        "text": "{\n  \"items\": [\n    {\n      \"companyCode\": \"{{ _.supplierCompanyCode }}\",\n      \"itemId\": {{ _.childItemId }},\n      \"periodType\": \"YEAR\",\n      \"periodValue\": \"2024\",\n      \"region\": \"全球\",\n      \"metric\": \"REVENUE\",\n      \"sharePercent\": 70.5,\n      \"provenance\": { \"sourceType\": \"EXTERNAL\", \"sourceDetail\": \"市場報告 A\" }\n    }\n  ]\n}"
+      },
+      "parameters": [],
+      "headers": [
+        {
+          "id": "pair_h_req_bulk_market_shares",
+          "name": "Content-Type",
+          "value": "application/json"
+        }
+      ],
+      "authentication": {},
+      "metaSortKey": -500,
+      "isPrivate": false,
+      "settingStoreCookies": true,
+      "settingSendCookies": true,
+      "settingDisableRenderRequestBody": false,
+      "settingEncodeUrl": true,
+      "settingRebuildPath": true,
+      "settingFollowRedirects": "global",
+      "_type": "request"
+    },
+    {
+      "_id": "req_bulk_empty",
+      "parentId": "fld_bulk",
+      "modified": 1753500000000,
+      "created": 1753500000000,
+      "url": "{{ _.baseUrl }}/api/bulk/items",
+      "name": "400 — 空批次",
+      "description": "預期 400：批次項目不得為空。",
+      "method": "POST",
+      "body": {
+        "mimeType": "application/json",
+        "text": "{\n  \"items\": []\n}"
+      },
+      "parameters": [],
+      "headers": [
+        {
+          "id": "pair_h_req_bulk_empty",
           "name": "Content-Type",
           "value": "application/json"
         }

@@ -8,6 +8,7 @@ import com.profetai.industrymap.model.Item;
 import com.profetai.industrymap.model.ItemComposition;
 import com.profetai.industrymap.payloads.ProvenanceRequest;
 import com.profetai.industrymap.payloads.item.ComponentNode;
+import com.profetai.industrymap.payloads.item.CompositionResponse;
 import com.profetai.industrymap.payloads.item.CreateCompositionRequest;
 import com.profetai.industrymap.repository.ItemCompositionRepository;
 import com.profetai.industrymap.repository.ItemRepository;
@@ -247,6 +248,57 @@ class ItemCompositionServiceTest {
 
         ServerException ex = assertThrows(ServerException.class,
                 () -> itemCompositionService.findReachableEndProducts(99L, false));
+
+        assertEquals(HttpStatus.NOT_FOUND, ex.getHttpStatus());
+    }
+
+    @Test
+    @DisplayName("查節點的組成關係應回傳上下層節點、必要性與審核狀態")
+    void findCompositions_existingRelations_shouldReturnBothEndsWithNecessityAndStatus() {
+        // Given
+        when(itemRepository.findById(1L)).thenReturn(Optional.of(itemA));
+        ItemComposition edge = composition(itemA, itemB);
+        edge.setId(7L);
+        edge.setReviewStatus(ReviewStatus.VERIFIED);
+        when(itemCompositionRepository.findByParentItemIdAndReviewStatusIn(1L, VERIFIED_ONLY))
+                .thenReturn(List.of(edge));
+
+        // When
+        List<CompositionResponse> compositions = itemCompositionService.findCompositions(1L, false);
+
+        // Then
+        assertAll(
+                () -> assertEquals(1, compositions.size()),
+                () -> assertEquals(7L, compositions.get(0).getId()),
+                () -> assertEquals(1L, compositions.get(0).getParentItemId()),
+                () -> assertEquals(2L, compositions.get(0).getChildItemId()),
+                () -> assertEquals(Necessity.STANDARD, compositions.get(0).getNecessity()),
+                () -> assertEquals(ReviewStatus.VERIFIED, compositions.get(0).getReviewStatus()));
+    }
+
+    @Test
+    @DisplayName("明確指定納入草稿時查詢範圍應含草稿，且任何情況都不含已駁回")
+    void findCompositions_includingDrafts_shouldQueryVerifiedAndDraftButNeverRejected() {
+        Set<ReviewStatus> expectedScope = Set.of(ReviewStatus.VERIFIED, ReviewStatus.DRAFT);
+        when(itemRepository.findById(1L)).thenReturn(Optional.of(itemA));
+        when(itemCompositionRepository.findByParentItemIdAndReviewStatusIn(1L, expectedScope))
+                .thenReturn(List.of());
+
+        itemCompositionService.findCompositions(1L, true);
+
+        assertAll(
+                () -> verify(itemCompositionRepository).findByParentItemIdAndReviewStatusIn(1L, expectedScope),
+                () -> verify(itemCompositionRepository, never())
+                        .findByParentItemIdAndReviewStatusIn(1L, Set.of(ReviewStatus.REJECTED)));
+    }
+
+    @Test
+    @DisplayName("查無此節點時應拋出 404 ServerException")
+    void findCompositions_unknownItem_shouldThrowNotFound() {
+        when(itemRepository.findById(99L)).thenReturn(Optional.empty());
+
+        ServerException ex = assertThrows(ServerException.class,
+                () -> itemCompositionService.findCompositions(99L, false));
 
         assertEquals(HttpStatus.NOT_FOUND, ex.getHttpStatus());
     }

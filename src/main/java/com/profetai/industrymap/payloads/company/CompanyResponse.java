@@ -1,6 +1,7 @@
 package com.profetai.industrymap.payloads.company;
 
 import com.profetai.industrymap.enums.ReviewStatus;
+import com.profetai.industrymap.helper.CompanyReferences;
 import com.profetai.industrymap.model.Company;
 import com.profetai.industrymap.model.CompanyIdentifier;
 import io.swagger.v3.oas.annotations.media.Schema;
@@ -44,14 +45,8 @@ public class CompanyResponse {
     private List<CompanyIdentifierResponse> identifiers;
 
     public static CompanyResponse from(Company company, List<CompanyIdentifier> identifiers) {
-        String reference = identifiers.stream()
-                .filter(CompanyIdentifier::isPrimary)
-                .map(CompanyIdentifier::getIdentifierValue)
-                .findFirst()
-                .orElse(company.getNormalizedName());
-
         return CompanyResponse.builder()
-                .reference(reference)
+                .reference(CompanyReferences.of(company, identifiers))
                 .displayName(company.getDisplayName())
                 .normalizedName(company.getNormalizedName())
                 .country(company.getCountry())

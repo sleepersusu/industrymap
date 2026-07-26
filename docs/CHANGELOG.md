@@ -25,6 +25,14 @@
   等於寫進去的資料一律查不到 — 2026-07-26 · user · (pending)
 - (review) 審核支援批次 `POST /api/reviews/batch`：單次可審多筆並跨不同資料類型，
   個別失敗不影響其他項目，逐筆回報成功或失敗原因 — 2026-07-26 · user · (pending)
+- (review) 審核目標可改用自然鍵定位，不必先知道內部識別碼：公司識別碼用「類型 + 代號值」、
+  組成關係用「上層 + 下層節點」、供應角色用「公司 + 零件 + 角色」、市佔率用完整維度組合。
+  此前公司識別碼這一類的查詢回應完全不含識別碼，只能直接查資料庫才審得掉 — 2026-07-26 · user · (pending)
+- (bulk) 新增批次建立端點 `/api/bulk/{items,compositions,companies,identifiers,supply-roles,market-shares}`：
+  單次提交多筆，個別失敗不影響其他項目並逐筆回報原因；每筆成功項目回傳自然鍵，
+  可直接轉成批次審核請求，建立到審核之間不需再查詢任何端點 — 2026-07-26 · user · (pending)
+- (item) 新增 `GET /api/items/{id}/compositions` 查節點的組成關係，回傳上下層節點、必要性與審核狀態；
+  組成樹回應只給節點識別碼，此前拿不到關係本身的定位資訊 — 2026-07-26 · user · (pending)
 
 ### 修正
 
@@ -36,6 +44,10 @@
 - (supply) **破壞性變更**：建立供應角色與寫入市佔率改以公司代號指定公司（`companyCode`），
   不再要求呼叫端提供內部識別碼（`companyId`）。此前建完公司後無從取得該識別碼，
   只能直接查資料庫才建得了供應關係 — 2026-07-26 · user · (pending)
+
+- (company) **行為變更**：供應商與市佔率回應的 `companyReference` 改與 `GET /api/companies/{code}` 的
+  `reference` 同一套規則——優先主要代號，公司無任何識別碼時才退回正規化名稱。此前同一家公司在
+  兩處會拿到不同值，兩個值雖然都查得到公司，但呼叫端容易誤判成兩家 — 2026-07-26 · user · (pending)
 
 - (config) 資料庫連線帳密改由專案根目錄的 `.env` 提供（`DB_URL` / `DB_USERNAME` / `DB_PASSWORD`），
   不再寫在 `application.properties`；`.env` 不進版控 — 2026-07-26 · user · (pending)

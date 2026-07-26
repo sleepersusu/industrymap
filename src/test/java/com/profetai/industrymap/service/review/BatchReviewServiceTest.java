@@ -1,11 +1,13 @@
 package com.profetai.industrymap.service.review;
 
+import com.profetai.industrymap.enums.IdentifierType;
 import com.profetai.industrymap.enums.ReviewStatus;
 import com.profetai.industrymap.enums.ReviewTargetType;
 import com.profetai.industrymap.exceptions.ServerException;
 import com.profetai.industrymap.payloads.review.BatchReviewRequest;
 import com.profetai.industrymap.payloads.review.ReviewResultResponse;
 import com.profetai.industrymap.payloads.review.ReviewTarget;
+import com.profetai.industrymap.payloads.review.ReviewTargetKey;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -61,7 +63,7 @@ class BatchReviewServiceTest {
     void applyBatch_oneTargetMissing_shouldReviewOthersAndReportFailure() {
         // Given：第二筆查無目標，第一與第三筆有效
         givenApplySucceeds(ReviewTargetType.ITEM, 1L);
-        when(reviewApplyService.apply(ReviewTargetType.ITEM, 404L, ReviewStatus.VERIFIED, REVIEWER))
+        when(reviewApplyService.apply(ReviewTargetType.ITEM, 404L, null, ReviewStatus.VERIFIED, REVIEWER))
                 .thenThrow(new ServerException("查無此審核目標：ITEM 404", HttpStatus.NOT_FOUND));
         givenApplySucceeds(ReviewTargetType.MARKET_SHARE, 3L);
 
@@ -80,7 +82,7 @@ class BatchReviewServiceTest {
                 () -> assertEquals(404L, results.get(1).getTargetId()),
                 () -> assertTrue(results.get(2).isSuccess()),
                 () -> verify(reviewApplyService)
-                        .apply(ReviewTargetType.MARKET_SHARE, 3L, ReviewStatus.VERIFIED, REVIEWER));
+                        .apply(ReviewTargetType.MARKET_SHARE, 3L, null, ReviewStatus.VERIFIED, REVIEWER));
     }
 
     @Test
@@ -99,11 +101,11 @@ class BatchReviewServiceTest {
                 () -> assertEquals(3, results.size()),
                 () -> assertTrue(results.stream().allMatch(ReviewResultResponse::isSuccess)),
                 () -> verify(reviewApplyService)
-                        .apply(ReviewTargetType.ITEM_COMPOSITION, 5L, ReviewStatus.VERIFIED, REVIEWER),
+                        .apply(ReviewTargetType.ITEM_COMPOSITION, 5L, null, ReviewStatus.VERIFIED, REVIEWER),
                 () -> verify(reviewApplyService)
-                        .apply(ReviewTargetType.COMPANY_ITEM_ROLE, 6L, ReviewStatus.VERIFIED, REVIEWER),
+                        .apply(ReviewTargetType.COMPANY_ITEM_ROLE, 6L, null, ReviewStatus.VERIFIED, REVIEWER),
                 () -> verify(reviewApplyService)
-                        .apply(ReviewTargetType.MARKET_SHARE, 7L, ReviewStatus.VERIFIED, REVIEWER));
+                        .apply(ReviewTargetType.MARKET_SHARE, 7L, null, ReviewStatus.VERIFIED, REVIEWER));
     }
 
     @Test
@@ -112,7 +114,7 @@ class BatchReviewServiceTest {
         // Given：commit 期的鎖競爭等失敗拋的不是 ServerException，
         // 若只攔 ServerException 會讓其餘項目全部不處理，呼叫端也拿不到逐筆結果
         givenApplySucceeds(ReviewTargetType.ITEM, 1L);
-        when(reviewApplyService.apply(ReviewTargetType.ITEM, 2L, ReviewStatus.VERIFIED, REVIEWER))
+        when(reviewApplyService.apply(ReviewTargetType.ITEM, 2L, null, ReviewStatus.VERIFIED, REVIEWER))
                 .thenThrow(new CannotAcquireLockException("could not obtain lock on row"));
         givenApplySucceeds(ReviewTargetType.MARKET_SHARE, 3L);
 
@@ -130,11 +132,40 @@ class BatchReviewServiceTest {
                 () -> assertNotNull(results.get(1).getMessage()),
                 () -> assertTrue(results.get(2).isSuccess()),
                 () -> verify(reviewApplyService)
-                        .apply(ReviewTargetType.MARKET_SHARE, 3L, ReviewStatus.VERIFIED, REVIEWER));
+                        .apply(ReviewTargetType.MARKET_SHARE, 3L, null, ReviewStatus.VERIFIED, REVIEWER));
+    }
+
+    @Test
+    @DisplayName("批次中混用內部 id 與自然鍵時應逐筆各自解析")
+    void applyBatch_mixedLocators_shouldResolveEachTargetIndependently() {
+        // Given：節點用 id、公司識別碼只拿得到自然鍵（該類型的查詢回應不含 id）
+        ReviewTargetKey identifierKey = ReviewTargetKey.builder()
+                .identifierType(IdentifierType.TWSE).identifierValue("2330").build();
+        givenApplySucceeds(ReviewTargetType.ITEM, 1L, null);
+        givenApplySucceeds(ReviewTargetType.COMPANY_IDENTIFIER, null, identifierKey);
+
+        // When
+        List<ReviewResultResponse> results = batchReviewService.applyBatch(batchRequest(
+                ReviewTarget.builder().targetType(ReviewTargetType.ITEM).targetId(1L).build(),
+                ReviewTarget.builder().targetType(ReviewTargetType.COMPANY_IDENTIFIER)
+                        .naturalKey(identifierKey).build()));
+
+        // Then
+        assertAll(
+                () -> assertEquals(2, results.size()),
+                () -> assertTrue(results.stream().allMatch(ReviewResultResponse::isSuccess)),
+                () -> verify(reviewApplyService).apply(ReviewTargetType.ITEM, 1L, null,
+                        ReviewStatus.VERIFIED, REVIEWER),
+                () -> verify(reviewApplyService).apply(ReviewTargetType.COMPANY_IDENTIFIER, null, identifierKey,
+                        ReviewStatus.VERIFIED, REVIEWER));
     }
 
     private void givenApplySucceeds(ReviewTargetType targetType, Long targetId) {
-        when(reviewApplyService.apply(targetType, targetId, ReviewStatus.VERIFIED, REVIEWER))
+        givenApplySucceeds(targetType, targetId, null);
+    }
+
+    private void givenApplySucceeds(ReviewTargetType targetType, Long targetId, ReviewTargetKey naturalKey) {
+        when(reviewApplyService.apply(targetType, targetId, naturalKey, ReviewStatus.VERIFIED, REVIEWER))
                 .thenReturn(ReviewResultResponse.builder()
                         .targetType(targetType)
                         .targetId(targetId)

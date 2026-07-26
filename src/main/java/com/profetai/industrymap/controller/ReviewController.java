@@ -41,24 +41,30 @@ public class ReviewController {
     @Operation(summary = "審核單筆資料",
             description = "支援的目標類型：ITEM、ITEM_ALIAS、ITEM_COMPOSITION、COMPANY、COMPANY_ALIAS、"
                     + "COMPANY_IDENTIFIER、COMPANY_ITEM_ROLE、MARKET_SHARE。"
+                    + "目標可用內部 id（targetId）或自然鍵（naturalKey）定位，擇一提供即可；"
+                    + "兩者同時提供時以 targetId 為準。各類型的自然鍵組合見 ReviewTargetKey。"
                     + "轉為 VERIFIED / REJECTED 需提供審核者；退回 DRAFT 會清空審核者與審核時間。")
     @ApiResponses({
             @ApiResponse(responseCode = "200", description = "審核完成，回傳更新後的狀態"),
-            @ApiResponse(responseCode = "400", description = "不支援的目標類型、缺少必填欄位或未提供審核者"),
-            @ApiResponse(responseCode = "404", description = "該類型底下查無此識別碼")
+            @ApiResponse(responseCode = "400", description = "不支援的目標類型、兩種定位方式皆未提供、"
+                    + "自然鍵欄位不足（訊息會指出缺哪些維度）或未提供審核者"),
+            @ApiResponse(responseCode = "404", description = "該類型底下查無此識別碼或自然鍵")
     })
     public ResponseEntity<ServerResponse<ReviewResultResponse>> review(@Valid @RequestBody ReviewRequest request) {
         return ServerResponses.ok(reviewApplyService.apply(
-                request.getTargetType(), request.getTargetId(),
+                request.getTargetType(), request.getTargetId(), request.getNaturalKey(),
                 request.getTargetStatus(), request.getReviewer()));
     }
 
     @PostMapping("/batch")
     @Operation(summary = "批次審核",
-            description = "各筆可屬於不同資料類型；個別失敗不影響其他項目，逐筆回報成功或失敗原因。")
+            description = "各筆可屬於不同資料類型，也可分別以內部 id 或自然鍵定位；"
+                    + "個別失敗不影響其他項目，逐筆回報成功或失敗原因。"
+                    + "批次建立端點的回應可直接轉為本請求的 targets，不需再查詢任何端點。")
     @ApiResponses({
             @ApiResponse(responseCode = "200", description = "批次處理完成，逐筆回報結果"),
-            @ApiResponse(responseCode = "400", description = "空批次、不支援的目標類型或未提供審核者")
+            @ApiResponse(responseCode = "400", description = "空批次、不支援的目標類型、"
+                    + "某筆兩種定位方式皆未提供，或未提供審核者")
     })
     public ResponseEntity<ServerResponse<List<ReviewResultResponse>>> reviewBatch(
             @Valid @RequestBody BatchReviewRequest request) {

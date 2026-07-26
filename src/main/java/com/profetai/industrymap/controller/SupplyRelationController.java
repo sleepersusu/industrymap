@@ -1,11 +1,14 @@
 package com.profetai.industrymap.controller;
 
+import com.profetai.industrymap.model.CompanyItemRole;
+import com.profetai.industrymap.model.MarketShare;
 import com.profetai.industrymap.payloads.ServerResponse;
 import com.profetai.industrymap.payloads.ServerResponses;
 import com.profetai.industrymap.payloads.supply.CreateCompanyItemRoleRequest;
 import com.profetai.industrymap.payloads.supply.CreateMarketShareRequest;
 import com.profetai.industrymap.payloads.supply.MarketShareResponse;
 import com.profetai.industrymap.payloads.supply.SupplierResponse;
+import com.profetai.industrymap.service.company.CompanyService;
 import com.profetai.industrymap.service.supply.CompanyItemRoleService;
 import com.profetai.industrymap.service.supply.MarketShareService;
 import io.swagger.v3.oas.annotations.Operation;
@@ -32,6 +35,8 @@ public class SupplyRelationController {
 
     private final CompanyItemRoleService companyItemRoleService;
     private final MarketShareService marketShareService;
+    /** 建立後的回應同樣要給出統一規則下的公司對外識別（design D4），因此需要解析主要代號 */
+    private final CompanyService companyService;
 
     @PostMapping("/roles")
     @Operation(summary = "建立公司與零件的供應關係",
@@ -46,7 +51,9 @@ public class SupplyRelationController {
     public ResponseEntity<ServerResponse<SupplierResponse>> createRole(
             @Valid @RequestBody CreateCompanyItemRoleRequest request) {
 
-        return ServerResponses.created(SupplierResponse.from(companyItemRoleService.create(request)));
+        CompanyItemRole role = companyItemRoleService.create(request);
+        return ServerResponses.created(
+                SupplierResponse.from(role, companyService.referenceOf(role.getCompany())));
     }
 
     @PostMapping("/market-shares")
@@ -62,6 +69,8 @@ public class SupplyRelationController {
     public ResponseEntity<ServerResponse<MarketShareResponse>> createMarketShare(
             @Valid @RequestBody CreateMarketShareRequest request) {
 
-        return ServerResponses.created(MarketShareResponse.from(marketShareService.create(request)));
+        MarketShare marketShare = marketShareService.create(request);
+        return ServerResponses.created(
+                MarketShareResponse.from(marketShare, companyService.referenceOf(marketShare.getCompany())));
     }
 }

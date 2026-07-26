@@ -24,14 +24,17 @@ public class BatchReviewService {
 
     private final ReviewApplyService reviewApplyService;
 
-    /** 逐筆套用審核；單筆失敗只記錄該筆原因，其餘照常進行 */
+    /**
+     * 逐筆套用審核；單筆失敗只記錄該筆原因，其餘照常進行。
+     * 各筆的定位方式互不相干，同一批可混用內部 id 與自然鍵（design D1）。
+     */
     public List<ReviewResultResponse> applyBatch(BatchReviewRequest request) {
         List<ReviewResultResponse> results = new ArrayList<>(request.getTargets().size());
 
         for (ReviewTarget target : request.getTargets()) {
             try {
                 results.add(reviewApplyService.apply(target.getTargetType(), target.getTargetId(),
-                        request.getTargetStatus(), request.getReviewer()));
+                        target.getNaturalKey(), request.getTargetStatus(), request.getReviewer()));
             } catch (Exception ex) {
                 // 一筆識別碼打錯，不該讓另外 99 筆已經看過的資料白審。
                 // 這裡是批次迴圈的邊界層，攔截範圍刻意涵蓋非業務例外：單筆交易 commit 期的

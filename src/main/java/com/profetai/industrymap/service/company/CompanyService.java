@@ -1,6 +1,7 @@
 package com.profetai.industrymap.service.company;
 
 import com.profetai.industrymap.exceptions.ServerException;
+import com.profetai.industrymap.helper.CompanyReferences;
 import com.profetai.industrymap.helper.ProvenanceValidator;
 import com.profetai.industrymap.helper.ReviewScopes;
 import com.profetai.industrymap.model.Company;
@@ -19,8 +20,12 @@ import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.util.Collection;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
+import java.util.stream.Collectors;
 
 /**
  * 公司主檔、識別碼與別名。
@@ -218,6 +223,42 @@ public class CompanyService {
             throw new ServerException("查無此公司：" + reference, HttpStatus.NOT_FOUND);
         }
         return company;
+    }
+
+    /**
+     * 取得單一公司的對外識別（design D4）：優先主要識別碼的代號，無識別碼才退回正規化名稱。
+     * 規則本身寫在 {@link CompanyReferences}，本方法只負責把識別碼查出來。
+     */
+    @Transactional(readOnly = true)
+    public String referenceOf(Company company) {
+        return CompanyReferences.of(company, companyIdentifierRepository.findByCompanyId(company.getId()));
+    }
+
+    /**
+     * 批次取得多家公司的對外識別，回傳 companyId → 對外識別。
+     *
+     * <p>供應商清單與市佔率排名要逐筆組出對外識別，逐家查識別碼會變成 N+1，
+     * 因此一次把主要識別碼撈齊再比對。</p>
+     */
+    @Transactional(readOnly = true)
+    public Map<Long, String> referencesOf(Collection<Company> companies) {
+        Map<Long, Company> distinctCompanies = new LinkedHashMap<>();
+        for (Company company : companies) {
+            distinctCompanies.putIfAbsent(company.getId(), company);
+        }
+        if (distinctCompanies.isEmpty()) {
+            return Map.of();
+        }
+
+        Map<Long, List<CompanyIdentifier>> primaryByCompanyId =
+                companyIdentifierRepository.findByCompanyIdInAndIsPrimaryTrue(distinctCompanies.keySet()).stream()
+                        // company 是 LAZY 關聯，但只讀主鍵不會觸發初始化，這一步是安全的
+                        .collect(Collectors.groupingBy(identifier -> identifier.getCompany().getId()));
+
+        Map<Long, String> references = new LinkedHashMap<>();
+        distinctCompanies.forEach((companyId, company) -> references.put(companyId,
+                CompanyReferences.of(company, primaryByCompanyId.getOrDefault(companyId, List.of()))));
+        return references;
     }
 
     /** 對外列出公司識別碼：已駁回的識別碼不外露 */

@@ -118,6 +118,20 @@ public class ItemController {
         return ServerResponses.created(CompositionResponse.from(itemCompositionService.create(id, request)));
     }
 
+    @GetMapping("/{id}/compositions")
+    @Operation(summary = "查節點的組成關係",
+            description = "逐筆回傳上下層節點、必要性與審核狀態。組成樹回應只給節點 id，"
+                    + "這支補上關係本身的定位資訊，讓組成關係也能經審核端點以自然鍵定位。")
+    @ApiResponses({
+            @ApiResponse(responseCode = "200", description = "成功；無資料時回空清單"),
+            @ApiResponse(responseCode = "404", description = "查無此節點")
+    })
+    public ResponseEntity<ServerResponse<List<CompositionResponse>>> getCompositions(
+            @PathVariable Long id, @Valid @ModelAttribute ReviewScopeQuery query) {
+
+        return ServerResponses.ok(itemCompositionService.findCompositions(id, query.isIncludeDrafts()));
+    }
+
     @GetMapping("/{id}/end-products")
     @Operation(summary = "反向查詢零件所屬的終端成品",
             description = "沿組成關係向上回溯，回傳所有可達的終端成品——某顆零件最後裝進了哪些產品。")

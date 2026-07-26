@@ -8,6 +8,7 @@ import com.profetai.industrymap.enums.Necessity;
 import com.profetai.industrymap.enums.ReviewStatus;
 import com.profetai.industrymap.helper.ReviewScopes;
 import com.profetai.industrymap.payloads.item.ComponentNode;
+import com.profetai.industrymap.payloads.item.CompositionResponse;
 import com.profetai.industrymap.payloads.item.CreateCompositionRequest;
 import com.profetai.industrymap.repository.ItemCompositionRepository;
 import com.profetai.industrymap.repository.ItemRepository;
@@ -75,6 +76,27 @@ public class ItemCompositionService {
         log.info("建立組成關係 parentItemId={} childItemId={} necessity={}",
                 parent.getId(), child.getId(), request.getNecessity());
         return saved;
+    }
+
+    /**
+     * 查某節點底下的組成關係。
+     *
+     * <p>組成樹回應只給節點 id，拿不到關係本身的定位資訊，這一類資料因此無法經 API 審核；
+     * 本方法把關係逐筆攤平回傳，補上這一角（見 spec「組成關係可經查詢取得」）。</p>
+     *
+     * <p>回傳 payload 而非 entity：上下層節點是 LAZY 關聯，open-in-view 為 false，
+     * 組裝必須留在這個交易內。</p>
+     *
+     * @param includeDrafts 是否納入草稿關係；已駁回一律不外露
+     * @throws ServerException 節點不存在（404）
+     */
+    @Transactional(readOnly = true)
+    public List<CompositionResponse> findCompositions(Long itemId, boolean includeDrafts) {
+        getItem(itemId);
+        return itemCompositionRepository
+                .findByParentItemIdAndReviewStatusIn(itemId, ReviewScopes.visibleStatuses(includeDrafts)).stream()
+                .map(CompositionResponse::from)
+                .toList();
     }
 
     /**

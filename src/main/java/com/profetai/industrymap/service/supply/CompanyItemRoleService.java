@@ -20,6 +20,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.util.List;
+import java.util.Map;
 import java.util.Set;
 
 /**
@@ -89,9 +90,15 @@ public class CompanyItemRoleService {
                 : companyItemRoleRepository.findByItemIdAndCompanyRoleAndReviewStatusIn(
                         itemId, companyRole, statuses);
         // 關係本身通過審核，不代表它指向的公司還算數；公司被駁回時這筆供應關係一併不外露
-        return roles.stream()
+        List<CompanyItemRole> visible = roles.stream()
                 .filter(role -> ReviewScopes.isExposable(role.getCompany().getReviewStatus()))
-                .map(SupplierResponse::from)
+                .toList();
+
+        // 對外識別一次批次解析，避免逐筆查主要識別碼造成 N+1（design D4）
+        Map<Long, String> references =
+                companyService.referencesOf(visible.stream().map(CompanyItemRole::getCompany).toList());
+        return visible.stream()
+                .map(role -> SupplierResponse.from(role, references.get(role.getCompany().getId())))
                 .toList();
     }
 }

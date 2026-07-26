@@ -20,6 +20,7 @@
 | `/api/companies/...` | 第一階段 | 公司基本資料（含代號、對應零組件） | `/api/companies/{code}` |
 | `/api/supply-relations/...` | 第一階段 | 供應角色與市佔率寫入（公司以**代號**指定，不收內部 id） | `/api/supply-relations/roles` |
 | `/api/reviews` | 第一階段 | 審核狀態流轉，八張內容表共用單一端點 | `/api/reviews`、`/api/reviews/batch` |
+| `/api/bulk/...` | 第一階段 | 內容資料的批次建立（內部作業端點） | `/api/bulk/items`、`/api/bulk/market-shares` |
 | `/api/companies/{code}/news`、`/patents`、`/stock-price` | 後期 | 公司情資子資源 | `/api/companies/{code}/stock-price` |
 | `/api/internal/...` | 後期 | 內部服務間（如 job 觸發、健康檢查） | `/api/internal/market-sync/trigger` |
 | `/api/public/...` | 視需求 | 對外公開查詢 | `/api/public/industry-map/{productId}` |
@@ -29,6 +30,20 @@
 - 一律 kebab-case、資源導向：`stock-price`、`patent`、`news-item`。
 - 巢狀深度原則 2 層內；例如 `/api/companies/{code}/patents` 可以，避免再往下巢狀第三層。
 - 公司以**公司代號**（股票代號 / 統一編號）作為路徑識別，不用內部自增 id 曝露於外部 API。
+
+## 內部 id 的曝露界線
+
+「不曝露內部自增 id」這條規則的適用範圍是**公司的路徑識別**，不是「所有回應都不得含 id」。
+過度推論成後者，會做出資料進得去、出不來的端點——公司識別碼就曾因此無法經 API 審核。
+
+- **路徑識別**：公司一律用代號（未上市公司用正規化名稱）；品類節點沿用內部 id，
+  因為節點沒有代號體系，也不對外公開。
+- **回應主體**：查詢回應可以帶內部 id（如 `ItemResponse.id`、`CompositionResponse.id`），
+  但不得只靠 id 才能操作該筆資料。
+- **內部作業端點**（審核、批次建立）：目標 SHALL 支援以**自然鍵**定位，即該資料類型的資料庫唯一鍵；
+  id 定位可同時保留，兩者同時提供時以 id 為準。自然鍵欄位不足回 400 且訊息須列出缺少哪些欄位，
+  欄位齊全但查無資料才回 404。
+- **判準**：任一寫入端點的回應，都必須足以讓呼叫端在不查資料庫、不再打其他端點的前提下審核該筆資料。
 
 ## Status Code（專案語意）
 

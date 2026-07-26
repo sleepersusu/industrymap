@@ -25,6 +25,7 @@ import org.springframework.http.HttpStatus;
 
 import java.math.BigDecimal;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
 
@@ -198,6 +199,21 @@ class MarketShareServiceTest {
         assertAll(
                 () -> assertEquals(2, ranking.size()),
                 () -> assertEquals(new BigDecimal("70.0"), ranking.get(0).getSharePercent()));
+    }
+
+    @Test
+    @DisplayName("排名回應的公司對外識別應與供應商回應同一套規則：有主要代號時回代號")
+    void findRanking_companyWithPrimaryIdentifier_shouldExposeIdentifierValue() {
+        MarketShare share = MarketShare.builder().company(shimano).item(derailleur)
+                .sharePercent(new BigDecimal("70.0")).build();
+        when(marketShareRepository.findRanking(2L, "YEAR", "2024", "全球", "REVENUE",
+                Set.of(ReviewStatus.VERIFIED.name()))).thenReturn(List.of(share));
+        when(companyService.referencesOf(List.of(shimano))).thenReturn(Map.of(1L, SHIMANO_CODE));
+
+        List<MarketShareResponse> ranking =
+                marketShareService.findRanking(2L, PeriodType.YEAR, "2024", "全球", ShareMetric.REVENUE, false);
+
+        assertEquals(SHIMANO_CODE, ranking.get(0).getCompanyReference());
     }
 
     @Test

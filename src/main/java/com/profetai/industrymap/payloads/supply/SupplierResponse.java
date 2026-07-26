@@ -20,7 +20,7 @@ public class SupplierResponse {
     @Schema(description = "公司顯示名稱")
     private String companyName;
 
-    @Schema(description = "公司的路徑識別（正規化名稱）")
+    @Schema(description = "公司的對外識別：主要代號，無識別碼的公司則為正規化名稱", example = "2330")
     private String companyReference;
 
     @Schema(description = "角色")
@@ -32,10 +32,14 @@ public class SupplierResponse {
     @Schema(description = "來源類型")
     private SourceType sourceType;
 
-    public static SupplierResponse from(CompanyItemRole role) {
+    /**
+     * @param companyReference 公司對外識別，由 {@code CompanyReferences} 統一組出（design D4）；
+     *                         刻意由呼叫端傳入而非在此查詢，避免每筆供應商各查一次識別碼
+     */
+    public static SupplierResponse from(CompanyItemRole role, String companyReference) {
         return SupplierResponse.builder()
                 .companyName(role.getCompany().getDisplayName())
-                .companyReference(role.getCompany().getNormalizedName())
+                .companyReference(companyReference)
                 .companyRole(role.getCompanyRole())
                 .reviewStatus(role.getReviewStatus())
                 .sourceType(role.getSourceType())

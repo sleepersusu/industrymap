@@ -1,12 +1,15 @@
 package com.profetai.industrymap.service.review;
 
+import com.profetai.industrymap.enums.IdentifierType;
 import com.profetai.industrymap.enums.ReviewStatus;
 import com.profetai.industrymap.enums.ReviewTargetType;
 import com.profetai.industrymap.enums.SourceType;
 import com.profetai.industrymap.exceptions.ServerException;
+import com.profetai.industrymap.model.CompanyIdentifier;
 import com.profetai.industrymap.model.Item;
 import com.profetai.industrymap.model.ProvenanceEntity;
 import com.profetai.industrymap.payloads.review.ReviewResultResponse;
+import com.profetai.industrymap.payloads.review.ReviewTargetKey;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -32,11 +35,14 @@ class ReviewApplyServiceTest {
     @Mock
     private ReviewLookupService reviewLookupService;
 
+    @Mock
+    private NaturalKeyResolver naturalKeyResolver;
+
     /** 審核邏輯沿用既有的 ReviewService，不重寫；因此這裡用真實實例而非 mock */
     private final ReviewService reviewService = new ReviewService();
 
     private ReviewApplyService reviewApplyService() {
-        return new ReviewApplyService(reviewLookupService, reviewService);
+        return new ReviewApplyService(reviewLookupService, reviewService, naturalKeyResolver);
     }
 
     @Test
@@ -121,6 +127,63 @@ class ReviewApplyServiceTest {
 
         ServerException ex = assertThrows(ServerException.class,
                 () -> reviewApplyService().apply(ReviewTargetType.ITEM, 1L, ReviewStatus.VERIFIED, "  "));
+
+        assertAll(
+                () -> assertEquals(HttpStatus.BAD_REQUEST, ex.getHttpStatus()),
+                () -> verify(reviewLookupService, never()).save(any(), any()));
+    }
+
+    @Test
+    @DisplayName("以自然鍵審核公司識別碼應成功，全程不需要內部 id")
+    void apply_byNaturalKey_shouldReviewWithoutKnowingInternalId() {
+        // Given：公司識別碼的查詢回應完全不含 id，呼叫端只拿得到類型與代號值（design D1 的 F1）
+        ReviewTargetKey key = ReviewTargetKey.builder()
+                .identifierType(IdentifierType.TWSE).identifierValue("2330").build();
+        CompanyIdentifier identifier = CompanyIdentifier.builder()
+                .id(11L).identifierType(IdentifierType.TWSE).identifierValue("2330")
+                .sourceType(SourceType.MANUAL).build();
+        when(naturalKeyResolver.resolveId(ReviewTargetType.COMPANY_IDENTIFIER, key)).thenReturn(11L);
+        when(reviewLookupService.getTarget(ReviewTargetType.COMPANY_IDENTIFIER, 11L)).thenReturn(identifier);
+        when(reviewLookupService.save(eq(ReviewTargetType.COMPANY_IDENTIFIER), any(ProvenanceEntity.class)))
+                .thenAnswer(invocation -> invocation.getArgument(1));
+
+        // When
+        ReviewResultResponse result = reviewApplyService().apply(ReviewTargetType.COMPANY_IDENTIFIER, null, key,
+                ReviewStatus.VERIFIED, "reviewer@profetai");
+
+        // Then
+        assertAll(
+                () -> assertTrue(result.isSuccess()),
+                () -> assertEquals(ReviewStatus.VERIFIED, result.getReviewStatus()),
+                () -> assertEquals(11L, result.getTargetId()));
+    }
+
+    @Test
+    @DisplayName("同時提供內部 id 與自然鍵時應以 id 為準且不解析自然鍵")
+    void apply_bothIdAndNaturalKey_shouldPreferIdWithoutResolving() {
+        // Given
+        Item pcb = draftItem();
+        ReviewTargetKey key = ReviewTargetKey.builder().name("完全不同的節點").build();
+        when(reviewLookupService.getTarget(ReviewTargetType.ITEM, 1L)).thenReturn(pcb);
+        when(reviewLookupService.save(eq(ReviewTargetType.ITEM), any(ProvenanceEntity.class)))
+                .thenAnswer(invocation -> invocation.getArgument(1));
+
+        // When
+        ReviewResultResponse result = reviewApplyService()
+                .apply(ReviewTargetType.ITEM, 1L, key, ReviewStatus.VERIFIED, "reviewer@profetai");
+
+        // Then：不回錯誤，也不該再去解析自然鍵
+        assertAll(
+                () -> assertTrue(result.isSuccess()),
+                () -> assertEquals(1L, result.getTargetId()),
+                () -> verify(naturalKeyResolver, never()).resolveId(any(), any()));
+    }
+
+    @Test
+    @DisplayName("內部 id 與自然鍵皆未提供時應以 400 中止且不寫入")
+    void apply_neitherIdNorNaturalKey_shouldThrowBadRequestWithoutSaving() {
+        ServerException ex = assertThrows(ServerException.class, () -> reviewApplyService()
+                .apply(ReviewTargetType.ITEM, null, null, ReviewStatus.VERIFIED, "reviewer@profetai"));
 
         assertAll(
                 () -> assertEquals(HttpStatus.BAD_REQUEST, ex.getHttpStatus()),

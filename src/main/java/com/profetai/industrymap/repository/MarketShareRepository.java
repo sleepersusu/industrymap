@@ -7,6 +7,7 @@ import org.springframework.data.repository.query.Param;
 
 import java.util.Collection;
 import java.util.List;
+import java.util.Optional;
 
 /**
  * 市佔率查詢。所有手寫查詢一律以 native SQL 寫在本層，service 只負責呼叫；
@@ -59,4 +60,26 @@ public interface MarketShareRepository extends JpaRepository<MarketShare, Long> 
                                                @Param("region") String region,
                                                @Param("metric") String metric,
                                                @Param("sourceDetail") String sourceDetail);
+
+    /**
+     * 以自然鍵（六個維度 + 來源）定位單筆市佔率，供審核端點使用（design D1）。
+     * 比對條件與 uk_market_share_dimensions_source 索引一致，因此至多命中一筆。
+     */
+    @Query(value = """
+            SELECT ms.* FROM market_share ms
+            WHERE ms.company_id = :companyId
+              AND ms.item_id = :itemId
+              AND ms.period_type = :periodType
+              AND ms.period_value = :periodValue
+              AND ms.region = :region
+              AND ms.metric = :metric
+              AND COALESCE(ms.source_detail, '') = COALESCE(:sourceDetail, '')
+            """, nativeQuery = true)
+    Optional<MarketShare> findByDimensionsAndSource(@Param("companyId") Long companyId,
+                                                    @Param("itemId") Long itemId,
+                                                    @Param("periodType") String periodType,
+                                                    @Param("periodValue") String periodValue,
+                                                    @Param("region") String region,
+                                                    @Param("metric") String metric,
+                                                    @Param("sourceDetail") String sourceDetail);
 }
