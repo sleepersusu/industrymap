@@ -1,7 +1,10 @@
 # industry-map-model Specification
 
 ## Purpose
-TBD - created by archiving change add-industry-map-core-model. Update Purpose after archive.
+產業地圖的骨架：把產品與零件收斂成單一遞迴實體（主機板在 PC 語境是零件、在自己語境是產品，
+二分會逼出一個不存在的界線），節點代表品類而非具體型號，並以全站共用的節點串成 part-of 有向無環圖。
+「同一個東西全站只有一個節點」是這裡的核心約束——唯有如此，「這顆零件最後裝進了哪些產品」
+這類跨產業回溯才查得出來。part-of（組成）與 is-a（細分類型）刻意分開儲存也分開回傳。
 ## Requirements
 ### Requirement: 品類節點以單一遞迴實體表示
 

@@ -1,7 +1,11 @@
 # company-registry Specification
 
 ## Purpose
-TBD - created by archiving change add-industry-map-core-model. Update Purpose after archive.
+公司主檔與其對外識別。代號一律不放在公司本體：未上市公司一個代號都沒有，多地掛牌的公司則有好幾個，
+因此代號獨立成識別碼實體，公司不因缺少代號而無法登錄。別名讓同義異名（台積電／TSMC／台灣積體電路製造）
+收斂到同一家公司，避免 AI 生成資料時把一家公司拆成好幾家。
+對外一律以代號（未上市公司為正規化名稱）作為路徑識別，且所有回應的「公司對外識別」
+必須由同一套規則產出，不同端點不得對同一家公司給出不同的值。
 ## Requirements
 ### Requirement: 公司主檔
 

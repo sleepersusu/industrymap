@@ -1,7 +1,12 @@
 # data-provenance Specification
 
 ## Purpose
-TBD - created by archiving change add-industry-map-core-model. Update Purpose after archive.
+資料以 AI 生成初稿加人工審核的方式進來，市佔率數字尤其是幻覺重災區，因此每一筆內容資料都必須
+能回答「這是誰說的、有多可信、誰審過」。八張內容表共用同一組來源與審核欄位：來源類型與明細必填、
+AI 生成必帶信心度、新資料一律是草稿、對外查詢預設只回已驗證。
+已駁回的資料保留不刪除——刪掉等於下次 AI 生成又把同一筆錯誤資料寫回來。
+審核走單一 API，目標可用內部 id 或該類型的自然鍵定位；後者是為了讓查詢回應不曝露 id 的資料類型
+（例如公司識別碼）也審得掉，也讓生成流程的輸出可以直接餵進審核。
 ## Requirements
 ### Requirement: 所有內容資料必須記錄來源
 

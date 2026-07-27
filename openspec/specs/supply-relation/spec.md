@@ -1,7 +1,13 @@
 # supply-relation Specification
 
 ## Purpose
-TBD - created by archiving change add-industry-map-core-model. Update Purpose after archive.
+把零件接到實際的公司身上，回答「這個零件是誰做的、誰做得最多」。
+公司對零件的關係必帶角色（設計／製造／代工組裝／品牌／封測）：同一家公司對同一顆晶片
+可以既是製造也是封測，因此唯一鍵含角色，只有同角色重複才算衝突。
+市佔率是獨立實體，必帶期間、地區、口徑三個維度——缺一個數字就無法解讀；唯一鍵含來源，
+讓「來源 A 說 70%、來源 B 說 50%」兩筆並存並各自標示來源，由使用者判斷，而非由系統擅自選一個。
+市佔率不強制先有供應角色，因為這類資料常先於角色關係到達。
+公司一律以代號指定，呼叫端不需要、也無從取得內部識別碼。
 ## Requirements
 ### Requirement: 公司與零件的關係必須帶角色
 
