@@ -2,8 +2,12 @@ package com.profetai.industrymap.controller;
 
 import com.profetai.industrymap.enums.Necessity;
 import com.profetai.industrymap.exceptions.ServerException;
+import com.profetai.industrymap.payloads.PageResponse;
 import com.profetai.industrymap.payloads.item.ComponentNode;
+import com.profetai.industrymap.payloads.item.EndProductQuery;
+import com.profetai.industrymap.payloads.item.ItemResponse;
 import com.profetai.industrymap.service.item.ItemCompositionService;
+import com.profetai.industrymap.service.item.ItemService;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
@@ -15,6 +19,7 @@ import org.springframework.test.web.servlet.MockMvc;
 
 import java.util.List;
 
+import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.when;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
@@ -29,6 +34,49 @@ class ProductControllerTest {
 
     @MockitoBean
     private ItemCompositionService itemCompositionService;
+
+    @MockitoBean
+    private ItemService itemService;
+
+    @Test
+    @DisplayName("列出終端成品應回傳本頁內容與分頁中繼資訊")
+    void listEndProducts_defaultQuery_shouldReturnPage() throws Exception {
+        ItemResponse bike = ItemResponse.builder().id(1L).displayName("腳踏車").endProduct(true).build();
+        when(itemService.findEndProducts(any(EndProductQuery.class)))
+                .thenReturn(PageResponse.of(List.of(bike), 0, 20, 1L));
+
+        mockMvc.perform(get("/api/products"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.content[0].displayName").value("腳踏車"))
+                .andExpect(jsonPath("$.data.totalElements").value(1))
+                .andExpect(jsonPath("$.data.totalPages").value(1));
+    }
+
+    @Test
+    @DisplayName("列出終端成品無符合資料時應回 200 與空清單，而非 404")
+    void listEndProducts_noMatch_shouldReturnEmptyPage() throws Exception {
+        when(itemService.findEndProducts(any(EndProductQuery.class)))
+                .thenReturn(PageResponse.of(List.of(), 0, 20, 0L));
+
+        mockMvc.perform(get("/api/products").param("name", "不存在"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.content").isEmpty())
+                .andExpect(jsonPath("$.data.totalElements").value(0));
+    }
+
+    @Test
+    @DisplayName("列出終端成品時每頁筆數超出上限應回 400")
+    void listEndProducts_sizeAboveLimit_shouldReturnBadRequest() throws Exception {
+        mockMvc.perform(get("/api/products").param("size", "500"))
+                .andExpect(status().isBadRequest());
+    }
+
+    @Test
+    @DisplayName("列出終端成品時頁碼為負數應回 400")
+    void listEndProducts_negativePage_shouldReturnBadRequest() throws Exception {
+        mockMvc.perform(get("/api/products").param("page", "-1"))
+                .andExpect(status().isBadRequest());
+    }
 
     @Test
     @DisplayName("展開組成樹應回傳指定深度的節點")

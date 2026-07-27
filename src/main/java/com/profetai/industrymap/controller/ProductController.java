@@ -1,10 +1,14 @@
 package com.profetai.industrymap.controller;
 
+import com.profetai.industrymap.payloads.PageResponse;
 import com.profetai.industrymap.payloads.ServerResponse;
 import com.profetai.industrymap.payloads.ServerResponses;
 import com.profetai.industrymap.payloads.item.ComponentNode;
 import com.profetai.industrymap.payloads.item.ComponentTreeQuery;
+import com.profetai.industrymap.payloads.item.EndProductQuery;
+import com.profetai.industrymap.payloads.item.ItemResponse;
 import com.profetai.industrymap.service.item.ItemCompositionService;
+import com.profetai.industrymap.service.item.ItemService;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.responses.ApiResponse;
 import io.swagger.v3.oas.annotations.responses.ApiResponses;
@@ -29,6 +33,22 @@ import org.springframework.web.bind.annotation.RestController;
 public class ProductController {
 
     private final ItemCompositionService itemCompositionService;
+    private final ItemService itemService;
+
+    @GetMapping
+    @Operation(summary = "列出終端成品",
+            description = "產業地圖的進入點：呼叫端不需要事先知道任何 id，就能取得可以往下展開的產品清單。"
+                    + "可依名稱關鍵字模糊搜尋；已駁回的節點任何條件下都不外露。"
+                    + "只列終端成品，不列零件節點。")
+    @ApiResponses({
+            @ApiResponse(responseCode = "200", description = "成功；無符合資料時回空清單與總筆數 0，而非 404"),
+            @ApiResponse(responseCode = "400", description = "查詢條件驗證失敗")
+    })
+    public ResponseEntity<ServerResponse<PageResponse<ItemResponse>>> listEndProducts(
+            @Valid @ModelAttribute EndProductQuery query) {
+
+        return ServerResponses.ok(itemService.findEndProducts(query));
+    }
 
     @GetMapping("/{id}/components")
     @Operation(summary = "展開產品組成樹",

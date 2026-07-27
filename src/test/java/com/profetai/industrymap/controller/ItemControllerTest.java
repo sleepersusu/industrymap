@@ -7,6 +7,7 @@ import com.profetai.industrymap.enums.SourceType;
 import com.profetai.industrymap.exceptions.ServerException;
 import com.profetai.industrymap.model.Item;
 import com.profetai.industrymap.payloads.ProvenanceRequest;
+import com.profetai.industrymap.payloads.item.AmendItemRequest;
 import com.profetai.industrymap.payloads.item.CompositionResponse;
 import com.profetai.industrymap.payloads.item.CreateCompositionRequest;
 import com.profetai.industrymap.payloads.item.CreateItemRequest;
@@ -27,12 +28,14 @@ import org.springframework.test.web.servlet.MockMvc;
 import java.util.List;
 import java.util.Optional;
 
+import static org.hamcrest.Matchers.containsString;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyBoolean;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.when;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.put;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
@@ -134,6 +137,62 @@ class ItemControllerTest {
 
         mockMvc.perform(get("/api/items").param("name", "不存在"))
                 .andExpect(status().isNotFound());
+    }
+
+    @Test
+    @DisplayName("修正品類節點成功時應回傳 200 與修正後的節點")
+    void amendItem_validRequest_shouldReturnOk() throws Exception {
+        when(itemService.amend(eq(1L), any(AmendItemRequest.class))).thenReturn(
+                Item.builder().id(1L).normalizedName("主機板").displayName("主機板")
+                        .reviewStatus(ReviewStatus.DRAFT).sourceType(SourceType.MANUAL).build());
+
+        mockMvc.perform(put("/api/items/1")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {"displayName":"主機板","endProduct":false,"parentCategoryId":null}"""))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.displayName").value("主機板"))
+                .andExpect(jsonPath("$.data.reviewStatus").value("DRAFT"));
+    }
+
+    @Test
+    @DisplayName("修正品類節點缺少必填欄位時應回傳 400，訊息需指出缺少哪些欄位")
+    void amendItem_missingFields_shouldReturnBadRequest() throws Exception {
+        // 全量替換語意下，沒送 endProduct 與 parentCategoryId 不能被當成 false / 清空
+        mockMvc.perform(put("/api/items/1")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {"displayName":"主機板"}"""))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.message", containsString("endProduct")))
+                .andExpect(jsonPath("$.message", containsString("parentCategoryId")));
+    }
+
+    @Test
+    @DisplayName("修正不存在的品類節點時應回傳 404")
+    void amendItem_unknownItem_shouldReturnNotFound() throws Exception {
+        when(itemService.amend(eq(99L), any(AmendItemRequest.class)))
+                .thenThrow(new ServerException("查無此品類節點：99", HttpStatus.NOT_FOUND));
+
+        mockMvc.perform(put("/api/items/99")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {"displayName":"主機板","endProduct":false,"parentCategoryId":null}"""))
+                .andExpect(status().isNotFound());
+    }
+
+    @Test
+    @DisplayName("修正品類節點改名撞到既有名稱時應回傳 409")
+    void amendItem_nameConflict_shouldReturnConflict() throws Exception {
+        when(itemService.amend(eq(1L), any(AmendItemRequest.class)))
+                .thenThrow(new ServerException("名稱與另一個品類節點衝突：顯示卡", HttpStatus.CONFLICT));
+
+        mockMvc.perform(put("/api/items/1")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {"displayName":"顯示卡","endProduct":false,"parentCategoryId":null}"""))
+                .andExpect(status().isConflict())
+                .andExpect(jsonPath("$.success").value(false));
     }
 
     @Test

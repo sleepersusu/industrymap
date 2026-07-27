@@ -4,6 +4,7 @@ import com.profetai.industrymap.exceptions.ServerException;
 import com.profetai.industrymap.payloads.ReviewScopeQuery;
 import com.profetai.industrymap.payloads.ServerResponse;
 import com.profetai.industrymap.payloads.ServerResponses;
+import com.profetai.industrymap.payloads.item.AmendItemRequest;
 import com.profetai.industrymap.payloads.item.CompositionResponse;
 import com.profetai.industrymap.payloads.item.CreateCompositionRequest;
 import com.profetai.industrymap.payloads.item.CreateItemAliasRequest;
@@ -31,6 +32,7 @@ import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.ModelAttribute;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.PutMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
@@ -88,6 +90,24 @@ public class ItemController {
                 .map(ItemResponse::from)
                 .orElseThrow(() -> new ServerException("查無此品類節點：" + query.getName(), HttpStatus.NOT_FOUND));
         return ServerResponses.ok(resolved);
+    }
+
+    @PutMapping("/{id}")
+    @Operation(summary = "修正品類節點",
+            description = "全量替換 displayName、endProduct 與 is-a 上層品類，三個欄位都必須帶齊——"
+                    + "endProduct 是布林值，部分更新無法區分「沒送這個欄位」與「送了 false」。"
+                    + "任一欄位實際變更後審核狀態退回草稿，需重新審核才對外可見；"
+                    + "送出與現況完全相同的值視為無變更，不改狀態。")
+    @ApiResponses({
+            @ApiResponse(responseCode = "200", description = "修正成功"),
+            @ApiResponse(responseCode = "400", description = "欄位驗證失敗或未帶齊必填欄位"),
+            @ApiResponse(responseCode = "404", description = "查無此節點或查無指定的上層品類"),
+            @ApiResponse(responseCode = "409", description = "改名與其他節點或既有別名衝突，或上層品類造成 is-a 循環")
+    })
+    public ResponseEntity<ServerResponse<ItemResponse>> amend(
+            @PathVariable Long id, @Valid @RequestBody AmendItemRequest request) {
+
+        return ServerResponses.ok(ItemResponse.from(itemService.amend(id, request)));
     }
 
     @PostMapping("/{id}/aliases")
