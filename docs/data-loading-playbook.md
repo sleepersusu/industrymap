@@ -53,7 +53,14 @@ Swagger UI：http://localhost:8080/swagger-ui.html
 汽車、家電之下都是同一筆），跨產業查詢與市佔率統計都建立在這個前提上。
 一旦產生重複節點，「這家公司橫跨哪些產業」就會查錯，而且很難事後修。
 
-**每個要建立的名稱，都先查一次：**
+**做法：拆解前先把既有節點與公司的完整清單撈出來，當成 background 餵給模型**，
+而不是產完再一筆一筆查。逐一查只能擋住字面完全相同的名稱；把清單先給模型看，
+它才有機會判斷「印刷電路板」跟既有的「PCB」是同一個東西——這種同義詞正是逐一查擋不住的。
+
+清單指令見步驟 2。拿到清單後，要求模型在產出時對每個名稱明確標示是
+**沿用既有節點（附 id）** 還是 **新建**。
+
+寫入前再以解析端點覆核一次，作為第二道防線：
 
 ```bash
 curl -s -G "http://localhost:8080/api/items" --data-urlencode "name=PCB"
@@ -62,9 +69,9 @@ curl -s -G "http://localhost:8080/api/items" --data-urlencode "name=PCB"
 - 查得到 → **沿用回傳的 id**，不要建新節點
 - 查不到 → 才建立
 
-此端點同時比對正規化名稱與別名，所以「無線網路模組」若已登記為「WiFi 模組」的別名也會命中。
-但它擋不住尚未登記的同義詞——**AI 產出的名稱要人眼看過**，發現同義詞應改為登記別名
-（`POST /api/items/{id}/aliases`）而非新建節點。
+此端點同時比對正規化名稱與別名。若發現模型產出的是既有節點的同義詞，
+應改為登記別名（`POST /api/items/{id}/aliases`）而非新建節點——
+別名登記後，下次拆解就擋得住同一個同義詞。
 
 ### 2. 公司必須查證存在，且確實做該產品
 
@@ -167,9 +174,54 @@ curl -s -G "http://localhost:8080/api/items" --data-urlencode "name=PCB"
 - **公司**與**公司對零件的角色**：適用紀律 2，兩件事都要成立——公司存在、且確實做該產品
 - **市佔率**：適用紀律 3，一律需要真實出處，查不到就留空
 
-### 步驟 2：解析既有節點
+### 步驟 2：撈出既有清單，當 background 餵給模型
 
-把預計要建的名稱逐一查過（見紀律 1），列出「沿用」與「新建」兩份清單。
+**這一步要在拆解之前做**，不是產完再比對。
+
+> ⚠️ 目前**沒有「列出所有節點」的 API**——`GET /api/items` 只能以名稱解析單筆。
+> 因此清單直接查資料庫（唯讀，不繞過任何寫入驗證）。
+> 這是既有 API 的缺口，已記於本文件第八節。
+
+```bash
+cd /Users/user/Desktop/industrymap
+export PGPASSWORD=$(grep '^DB_PASSWORD=' .env | cut -d= -f2-)
+PSQL=/Library/PostgreSQL/16/bin/psql
+
+# 既有品類節點（含別名）
+$PSQL -h localhost -U postgres -d industrymap -A -F$'\t' -c "
+SELECT i.id, i.display_name, i.review_status,
+       CASE WHEN i.is_end_product THEN '成品' ELSE '零件' END AS kind,
+       coalesce(string_agg(a.display_alias, ', '), '') AS aliases
+FROM item i LEFT JOIN item_alias a ON a.item_id = i.id
+GROUP BY i.id ORDER BY i.id;"
+
+# 既有公司（含代號與別名）
+$PSQL -h localhost -U postgres -d industrymap -A -F$'\t' -c "
+SELECT c.id, c.display_name, c.review_status,
+       coalesce(string_agg(DISTINCT ci.identifier_value, ', '), '') AS codes,
+       coalesce(string_agg(DISTINCT ca.display_alias, ', '), '') AS aliases
+FROM company c
+LEFT JOIN company_identifier ci ON ci.company_id = c.id
+LEFT JOIN company_alias ca ON ca.company_id = c.id
+GROUP BY c.id ORDER BY c.id;"
+
+# 既有組成關係（避免重複建立）
+$PSQL -h localhost -U postgres -d industrymap -A -F$'\t' -c "
+SELECT p.display_name AS parent, ch.display_name AS child, ic.necessity, ic.review_status
+FROM item_composition ic
+JOIN item p ON p.id = ic.parent_item_id
+JOIN item ch ON ch.id = ic.child_item_id
+ORDER BY p.display_name, ch.display_name;"
+```
+
+**把這三份清單完整放進拆解的提示詞裡**，並明確要求模型：
+
+> 以下是資料庫既有的節點與公司清單。產出拆解結果時，每個名稱都必須標示是
+> 「沿用」（附既有 id）還是「新建」。若你要產出的名稱與清單中某項是同義詞
+> （例如「印刷電路板」對應既有的「PCB」），一律標示為沿用該既有節點，不要新建。
+
+清單中 `review_status` 為 `DRAFT` 且名稱以「驗證用」開頭者是走查殘留，
+可以沿用去重判斷，但**不要拿來接新的關係**。
 
 ### 步驟 3：批次建立品類節點
 
@@ -316,8 +368,18 @@ curl -X POST http://localhost:8080/api/reviews/batch \
 `targetId` 與 `naturalKey` 擇一即可，同時提供時以 `targetId` 為準。
 逐筆回報結果，個別失敗不影響其他筆。
 
-**審核前請人眼看過內容**——這一步的意義就在於擋下 AI 的錯誤，全部照單全收等於沒有審核。
-判斷有問題的改送 `REJECTED`（資料保留不刪除，避免下次生成又寫回同一筆錯誤）。
+**本流程不設人工停點**：紀律 2 的 80% 門檻就是唯一的關卡。
+凡是寫得進去的資料（代表查證時 `confidence >= 0.8`），這一步全部轉為 `VERIFIED`，
+不需要等人確認。
+
+> ⚠️ **這代表門檻必須誠實套用。** 關卡從「事後人工審核」前移到「寫入前查證」，
+> 中間沒有第二道防線。若查證不足卻給 0.85 讓資料過關，錯誤會直接進入已驗證狀態、
+> 出現在對外查詢，而且沒有人會發現。**查不到就不要寫**——不寫的成本遠低於寫錯。
+
+`reviewer` 請填得能看出是自動流程（例如 `claude-code-2026-07-27`），
+日後要回頭清查某一輪灌入的資料時才找得到。
+
+事後若發現錯誤，改送 `REJECTED` 而非刪除——資料保留著，下次生成才不會又寫回同一筆錯誤。
 
 ### 步驟 8：驗證
 
@@ -370,3 +432,29 @@ curl -s "http://localhost:8080/api/items/81/end-products"
 > 每輪作業後在此追加一節。
 
 （尚無紀錄）
+
+---
+
+## 八、已知缺口
+
+作業過程中發現、但尚未修補的問題。日後開 change 時的候選項目。
+
+### G1：沒有「列出所有節點／公司」的 API
+
+`GET /api/items` 只能以名稱或別名解析**單筆**，沒有列表端點。
+步驟 2 要撈既有清單當 background，只能直接查資料庫。
+
+影響：任何需要總覽的用途（灌資料前的去重、日後的前端瀏覽、方案 A 的 pipeline
+在生成前取既有節點）都缺這個端點。方案 A 的 `design D5`（寫入前比對既有節點）
+若要在後端實作，也需要有效率地取得候選清單。
+
+可能方向：新增分頁列表端點，支援依審核狀態過濾與名稱模糊搜尋。
+
+### G2：同義詞去重仍依賴模型判斷
+
+解析端點只比對正規化名稱與已登記別名，擋不住尚未登記的同義詞。
+目前靠「把既有清單當 background 餵給模型」降低發生率，但沒有系統性保證。
+
+影響：同義節點一旦建立，DAG 節點共用即失效，且事後合併需改寫所有已建關係。
+
+可能方向：寫入前做名稱相似度比對並提示疑似重複；或提供實體合併工具。
