@@ -32,14 +32,25 @@ public final class NameNormalizer {
      * @throws ServerException 名稱為 null，或正規化後為空字串（400）
      */
     public static String normalize(String rawName) {
-        if (rawName == null) {
-            throw new ServerException("名稱不可為空", HttpStatus.BAD_REQUEST);
-        }
-        String nfkc = Normalizer.normalize(rawName, Normalizer.Form.NFKC);
-        String normalized = IGNORABLE_CHARS.matcher(nfkc.toLowerCase(Locale.ROOT)).replaceAll("");
+        String normalized = normalizeOrEmpty(rawName);
         if (normalized.isEmpty()) {
             throw new ServerException("名稱不可為空", HttpStatus.BAD_REQUEST);
         }
         return normalized;
+    }
+
+    /**
+     * 同 {@link #normalize}，但正規化後為空時回空字串而不拋例外。
+     *
+     * <p>供搜尋關鍵字這類「空值是合法輸入」的情境使用：必填名稱剝完沒剩東西是錯誤，
+     * 搜尋條件剝完沒剩東西只是「這個條件不構成過濾」。兩者共用同一套正規化規則，
+     * 差別只在空結果怎麼解讀，因此規則本身不重寫第二份。</p>
+     */
+    public static String normalizeOrEmpty(String rawName) {
+        if (rawName == null) {
+            return "";
+        }
+        String nfkc = Normalizer.normalize(rawName, Normalizer.Form.NFKC);
+        return IGNORABLE_CHARS.matcher(nfkc.toLowerCase(Locale.ROOT)).replaceAll("");
     }
 }

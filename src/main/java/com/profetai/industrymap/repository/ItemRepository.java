@@ -38,7 +38,7 @@ public interface ItemRepository extends JpaRepository<Item, Long> {
     List<Item> findEndProducts(@Param("reviewStatuses") Collection<String> reviewStatuses,
                                @Param("namePattern") String namePattern,
                                @Param("limit") int limit,
-                               @Param("offset") int offset);
+                               @Param("offset") long offset);
 
     /** 終端成品列表的總筆數，過濾條件與 {@link #findEndProducts} 一致 */
     @Query(value = """

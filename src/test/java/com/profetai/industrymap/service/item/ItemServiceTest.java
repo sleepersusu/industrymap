@@ -473,16 +473,70 @@ class ItemServiceTest {
     }
 
     @Test
-    @DisplayName("送出與現況完全相同的欄位值時審核狀態應維持已驗證")
+    @DisplayName("送出與現況逐字元相同的欄位值時審核狀態應維持已驗證")
     void amend_sameValues_shouldKeepVerified() {
-        // Given：只有顯示寫法不同（全形），正規化後與現況相同，視為沒有實質變更
+        // Given：三個欄位都與現況一模一樣——重送相同內容不該讓已驗證資料無故消失於對外查詢
         Item item = node(1L, "WiFi 模組", false, null, ReviewStatus.VERIFIED);
         when(itemRepository.findById(1L)).thenReturn(Optional.of(item));
         when(itemRepository.save(any(Item.class))).thenAnswer(invocation -> invocation.getArgument(0));
 
-        Item amended = itemService.amend(1L, amendRequest("ＷｉＦｉ模組", false, null));
+        Item amended = itemService.amend(1L, amendRequest("WiFi 模組", false, null));
 
         assertEquals(ReviewStatus.VERIFIED, amended.getReviewStatus());
+    }
+
+    @Test
+    @DisplayName("顯示名稱只有標點差異、正規化後相同時，仍應寫回並退回草稿")
+    void amend_displayNameDiffersOnlyInPunctuation_shouldWriteBackAndRevertToDraft() {
+        // Given：正規化會剝掉所有標點與符號，因此這個新名稱的 normalizedName 與現況相同。
+        // 但 displayName 是獨立儲存、對外顯示的欄位，值確實變了——
+        // 若只看正規化後的結果，已驗證節點的顯示名稱就能被任意改寫而不留審核痕跡
+        Item item = node(1L, "WiFi 模組", false, null, ReviewStatus.VERIFIED);
+        item.setReviewedBy("reviewer");
+        item.setReviewedAt(Instant.now());
+        when(itemRepository.findById(1L)).thenReturn(Optional.of(item));
+        when(itemRepository.save(any(Item.class))).thenAnswer(invocation -> invocation.getArgument(0));
+
+        // When
+        Item amended = itemService.amend(1L, amendRequest("W-i-F-i 模.組!!!", false, null));
+
+        // Then
+        assertAll(
+                () -> assertEquals("W-i-F-i 模.組!!!", amended.getDisplayName()),
+                () -> assertEquals("wifi模組", amended.getNormalizedName()),
+                () -> assertEquals(ReviewStatus.DRAFT, amended.getReviewStatus()),
+                () -> assertNull(amended.getReviewedBy()));
+    }
+
+    @Test
+    @DisplayName("關鍵字全為標點時應視為不過濾，而非回 400")
+    void findEndProducts_punctuationOnlyKeyword_shouldNotFilter() {
+        // 正規化把標點剝光後剩下空字串——語意上等同沒給關鍵字，
+        // 與 name 全為空白時的既有行為一致，不該變成「名稱不可為空」的 400
+        Set<String> verifiedOnly = Set.of(ReviewStatus.VERIFIED.name());
+        when(itemRepository.countEndProducts(verifiedOnly, "%")).thenReturn(1L);
+        when(itemRepository.findEndProducts(verifiedOnly, "%", 20, 0L))
+                .thenReturn(List.of(endProduct(1L, "腳踏車")));
+
+        PageResponse<ItemResponse> page =
+                itemService.findEndProducts(EndProductQuery.builder().name("---").build());
+
+        assertEquals(1, page.getContent().size());
+    }
+
+    @Test
+    @DisplayName("大頁碼的位移量不得整數溢位成負數")
+    void findEndProducts_largePageNumber_shouldNotOverflowOffset() {
+        // Given：107374183 * 20 以 int 相乘會溢位成 -2147483636，
+        // 送進 SQL 會變成負的 OFFSET，PostgreSQL 直接報錯而非回空頁
+        Set<String> verifiedOnly = Set.of(ReviewStatus.VERIFIED.name());
+        when(itemRepository.countEndProducts(verifiedOnly, "%")).thenReturn(3L);
+        when(itemRepository.findEndProducts(verifiedOnly, "%", 20, 2147483660L)).thenReturn(List.of());
+
+        PageResponse<ItemResponse> page = itemService.findEndProducts(
+                EndProductQuery.builder().page(107374183).size(20).build());
+
+        assertTrue(page.getContent().isEmpty());
     }
 
     @Test

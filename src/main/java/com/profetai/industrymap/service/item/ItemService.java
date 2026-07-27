@@ -94,7 +94,10 @@ public class ItemService {
         assertNoCategoryCycle(item.getId(), request.getParentCategoryId());
 
         Long currentParentCategoryId = item.getParentCategory() == null ? null : item.getParentCategory().getId();
-        boolean contentChanged = nameChanged
+        // displayName 比對原字串而非正規化結果：正規化會剝掉標點、空白與全半形差異，
+        // 拿它判斷有沒有變更，等於讓一筆已驗證資料的顯示名稱可以被改成任意標點組合而不重審。
+        // 正規化仍用於名稱衝突檢查（nameChanged），那是另一個問題
+        boolean contentChanged = !request.getDisplayName().equals(item.getDisplayName())
                 || item.isEndProduct() != request.getEndProduct()
                 || !Objects.equals(currentParentCategoryId, request.getParentCategoryId());
 
@@ -164,9 +167,13 @@ public class ItemService {
         Collection<String> reviewStatuses = ReviewScopes.visibleStatusNames(query.isIncludeDrafts());
         String namePattern = toNamePattern(query.getName());
 
+        // 位移量以 long 計算：page 沒有上限，int 相乘會在大頁碼時溢位成負數，
+        // 送進 SQL 就變成負的 OFFSET，資料庫直接報錯而非回空頁
+        long offset = (long) query.getPage() * query.getSize();
+
         long totalElements = itemRepository.countEndProducts(reviewStatuses, namePattern);
         List<ItemResponse> content = itemRepository
-                .findEndProducts(reviewStatuses, namePattern, query.getSize(), query.getPage() * query.getSize())
+                .findEndProducts(reviewStatuses, namePattern, query.getSize(), offset)
                 .stream()
                 .map(ItemResponse::from)
                 .toList();
@@ -179,12 +186,14 @@ public class ItemService {
      *
      * <p>比對正規化名稱而非顯示名稱，才能讓「ＷｉＦｉ 模組」找得到「WiFi模組」。
      * 正規化會移除標點與符號，{@code %} 與 {@code _} 因此不可能殘留在樣式的關鍵字部分。</p>
+     *
+     * <p>關鍵字正規化後為空（全是標點或空白）時視為不過濾，而不是錯誤：
+     * 搜尋條件跟必填名稱不同，「剝完沒剩東西」的語意是「這個條件不構成過濾」，
+     * 回 400「名稱不可為空」只會給呼叫端一句與輸入對不起來的訊息。</p>
      */
     private String toNamePattern(String rawName) {
-        if (rawName == null || rawName.isBlank()) {
-            return "%";
-        }
-        return "%" + NameNormalizer.normalize(rawName) + "%";
+        String normalized = NameNormalizer.normalizeOrEmpty(rawName);
+        return normalized.isEmpty() ? "%" : "%" + normalized + "%";
     }
 
     /** 取得節點，查無則 404。供寫入流程使用，不過濾審核狀態 */

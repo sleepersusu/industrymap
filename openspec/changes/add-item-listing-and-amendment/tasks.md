@@ -59,7 +59,11 @@
 ## 6. 驗證與收尾
 
 - [x] 6.1 收尾執行一次 `./mvnw clean verify`，附實際輸出（長時間 build 背景執行，靠完成通知取回結果，禁止輪詢迴圈）
-- [ ] 6.2 對本次 diff 跑 `/code-review`（fresh context），只修正確性 findings，不追風格與過度防禦建議
+- [x] 6.2 對本次 diff 跑 `/code-review`（fresh context），只修正確性 findings，不追風格與過度防禦建議
+      **結果**：codex plugin 未安裝，改以 general-purpose subagent 全新 context 審 `7737dcd`。
+      4 筆 findings，無 high。已修 3 筆正確性問題（displayName 改寫繞過審核、分頁位移量整數溢位、
+      純標點關鍵字回 400）；第 4 筆（列表逐筆初始化 LAZY `parentCategory` 的 N+1，PLAUSIBLE／low，
+      終端成品目前多半無 is-a 上層）判定為效能議題，本輪不動。三筆已寫入 `~/.claude/dev-errors/error-log.md`。
 - [x] 6.3 更新 `.claude/rules/api-design.md` 的 Base Path 表，補上 `GET /api/products` 列表與 `PUT /api/items/{id}` 修正端點
 - [x] 6.4 改寫 `docs/data-loading-playbook.md` 第八節 G1：說明列表端點已解掉「終端成品進入點」，但「列出所有節點（含零件）供灌資料去重」仍需資料庫唯讀查詢，並記下 design D1 的方案 C 遷移路徑
 - [x] 6.5 於 `docs/CHANGELOG.md` 的 `[Unreleased]` 記錄行為變化（新增終端成品列表、新增節點修正且修正後退回草稿），hash 欄寫 `(pending)`；追加前先掃既有項目，同 scope 同主題合併
