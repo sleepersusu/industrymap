@@ -1,6 +1,10 @@
 ## 1. 設定與常數
 
-- [ ] 1.1 於 `application.properties` 新增 RabbitMQ 連線設定，全部給預設值，未設定時應用程式仍可啟動
+- [ ] 1.1 於 `application.properties` 新增 RabbitMQ 連線設定，全部給預設值，未設定時應用程式仍可啟動。
+      **本機 broker 已就緒**（Docker 容器 `industrymap-rabbitmq`，RabbitMQ 4.3.4），`.env` 已備妥
+      `RABBITMQ_HOST` / `RABBITMQ_PORT` / `RABBITMQ_USERNAME` / `RABBITMQ_PASSWORD` 四項，
+      請沿用這組名稱對應到 `spring.rabbitmq.*`，勿另創變數名。
+      注意帳號非預設的 `guest`——Docker 埠轉發後來源 IP 非 loopback，`guest` 會被 RabbitMQ 拒絕
 - [ ] 1.2 新增 LLM 設定（端點、模型識別、逾時、最大重試），API key 以 `${LLM_API_KEY:}` 佔位取自 `.env`；確認 `.env` 已在 `.gitignore`
 - [ ] 1.3 新增拆解深度上限設定，並以 `@ConfigurationProperties` 綁定為型別安全的組態類別
 - [ ] 1.4 建立 `job/config/RabbitConfig`：集中 queue 名稱、consumer timeout、重試策略常數（參考 ais-backend 的組織方式，見 design D2）
