@@ -235,11 +235,11 @@ curl -X POST http://localhost:8080/api/bulk/items \
   -d '{
     "items": [
       {
-        "displayName": "主機板",
+        "displayName": "桌上型電腦",
         "endProduct": true,
         "provenance": {
           "sourceType": "AI_GENERATED",
-          "sourceDetail": "Claude Code 2026-07-27 主機板拆解第一輪",
+          "sourceDetail": "Claude Code 2026-07-28 桌上型電腦拆解",
           "confidence": 0.9
         }
       }
@@ -247,8 +247,19 @@ curl -X POST http://localhost:8080/api/bulk/items \
   }'
 ```
 
-`endProduct` 只有終端成品（腳踏車、主機板）為 `true`，零件為 `false`（可省略）。
+`endProduct` 只有終端成品（腳踏車、桌上型電腦）為 `true`，零件為 `false`（可省略）。
 `parentCategoryId` 用於 is-a 細分類型（車用 PCB is-a PCB），**不是**組成關係，通常不填。
+
+> ⚠️ **判準是「使用者會不會想從這裡開始逛」，不是「能不能零售單買」。**
+> 主機板、顯示卡、CPU、記憶體、電源供應器全都零售單買，但它們是桌上型電腦的零件；
+> 若以零售當標準，這個旗標會把幾乎所有節點都選進來，首頁變成平的全清單，等於沒有篩選。
+>
+> `is_end_product` 實際只控制兩件事：**出現在終端成品清單**、以及**反查時算不算終點**。
+> 它**不影響**能不能查該節點的組成樹——`GET /api/products/{id}/components`
+> 對任何節點都有效（已實測）。所以「想單獨看這片主機板的供應鏈」不是設 `true` 的理由。
+>
+> 本手冊 2026-07-27 第一輪就是照「主機板是終端成品」寫的，結果讓主機板與腳踏車
+> 並列在首頁；2026-07-28 已降級為零件（見第七節）。
 
 **回應會逐筆回傳 `targetId` 與 `naturalKey`**：
 
@@ -563,15 +574,42 @@ curl -s "http://localhost:8080/api/items/81/end-products"
    反查 `PCB` 現在回傳 `['主機板', '桌上型電腦']`——跨產品的節點共用（design D3）
    到這輪才有東西可驗。前兩輪腳踏車與主機板零交集，證明不了任何事。
 
-#### 已知未完成
+#### 已知未完成（皆已於 2026-07-28 收尾，見下方紀錄）
 
-- **主機板（241）仍是 `endProduct = true`**，因此同時出現在終端成品清單與桌上型電腦樹的第二層。
-  修正需要 `add-item-listing-and-amendment` 的修正端點，本輪無法處理。
-- **`.claude/rules/architecture.md` 與本手冊步驟 3 都把主機板當終端成品範例**，
-  而 `ItemCompositionService.java:156` 的註解寫的是「中間節點（主機板）不算終端成品」——
-  兩邊打架。修正端點完成後要一併改掉，否則下一輪的人還會照錯的範例做。
-- 本輪未補供應商的節點：**機械硬碟**（台廠無此產品線，需查 Seagate／WD／東芝）。
-  其餘 12 個新節點都已有供應商。
+- ~~**主機板（241）仍是 `endProduct = true`**~~ → 已於 `add-item-listing-and-amendment`
+  完成後以 `PUT /api/items/241` 降級為零件並重新審核。
+- ~~**文件把主機板當終端成品範例**~~ → 已修正步驟 3。
+  **當時說「`.claude/rules/architecture.md` 與手冊步驟 3 都有問題」是查證不實**——
+  `architecture.md` 舉的例子是「腳踏車、變速器、PCB」，從未把主機板列為終端成品，
+  實際只有手冊步驟 3 一處。`ItemCompositionService.java:156` 的註解
+  「中間節點（主機板）不算終端成品」則一直是對的。
+- ~~**機械硬碟無供應商**~~ → 已補 Seagate、Western Digital、Toshiba。
+
+### 2026-07-28：主機板降級為零件（收尾）
+
+**執行者**：Claude Code（`reviewer` = `claude-code-2026-07-28-mb-demote`）
+
+以剛完成的 `PUT /api/items/241` 將主機板的 `endProduct` 改為 `false`，
+端點如 spec 所述自動退回 `DRAFT`，再經 `POST /api/reviews` 審核回 `VERIFIED`。
+
+驗證結果：
+
+| 查詢 | 結果 |
+|---|---|
+| `GET /api/products`（終端成品清單） | 桌上型電腦、腳踏車（2 筆，主機板已不在） |
+| `GET /api/products/241/components` | 主機板底下 15 個零件，照常查得到 |
+| `GET /api/items/242/end-products`（PCB 反查） | `['桌上型電腦']`——不再回報主機板 |
+
+#### 過程中確認的一個行為（不是 bug）
+
+主機板處於 `DRAFT` 的期間，它**仍出現在桌上型電腦的組成樹裡**。這是刻意設計：
+`ReviewScopes.isExposable` 的註解寫明「節點層只擋 `REJECTED`、不擋 `DRAFT`，
+草稿的取捨屬於各查詢自己的 `includeDrafts` 語意」。組成樹以**關係**的審核狀態過濾，
+節點層只擋已駁回——否則一筆草稿節點會在樹上開一個洞。
+
+> 但 `data-provenance` spec 的 scenario 寫的是「修正後……不再出現於**預設查詢**」，
+> 而實際只從終端成品清單消失、組成樹仍在。**spec 的措辭比實作寬**，
+> 兩者不算矛盾但也不精確。日後若要收緊，該改的是 spec 措辭而非實作。
 
 ### 2026-07-28：電源模組補件（推翻前一輪的判斷）
 
