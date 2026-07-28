@@ -93,6 +93,25 @@ PostgreSQL / RabbitMQ（或等效 queue）/ Redis（快取）/ 外部資料來�
   （重複、循環、跨表衝突）才留在 service。來源欄位另有 `ProvenanceValidator` 在 service 層再擋一次，
   讓未來的批次匯入等非 HTTP 進入點套用同一組規則。
 
+## 審核狀態過濾是查詢的預設義務，不是選配
+
+此規則由 `dev-mistake-digest` 升格（2026-07-28）：同一個模式犯了 3 次，分別漏掉識別碼、別名、
+以及「角色所指向的品類節點」的 `review_status`，另有 1 次是同一過濾套用過頭而改變了 fallback 路徑。
+三次都不是不知道規則——`ReviewScopes` 就是為此存在，`ItemCompositionService.buildNode` 也早已示範
+「關係已驗證但指向已駁回節點」的處理。**規則與示範都在，缺的是寫新查詢時的檢查點。**
+
+新增或修改任何對外查詢時，必須逐項確認：
+
+1. 主查詢的表有 `review_status` → 必須過濾。
+2. 每個 join / 子查詢的表有 `review_status` → 必須過濾。
+3. 每個關係**指向**的實體有 `review_status` → 必須過濾。**這項最常漏**。
+4. 判定該欄位屬**關係**還是**實體**：
+   - 關係（組成、供應角色、市佔率）跟著呼叫端的 `includeDrafts` 走 → `ReviewScopes.visibleStatusNames`
+   - 實體（品類節點、公司、別名、識別碼）只擋 REJECTED → `ReviewScopes.exposableStatusNames`
+5. 過濾必須發生在**計數、分頁與組裝錯誤訊息之前**——曾有已駁回的識別碼被寫進 409 訊息而外露。
+
+判斷「這裡不需要過濾」時，必須在該查詢的 javadoc 寫明理由，不得留白。
+
 ## 禁止事項
 
 - 不把長流程（尤其是呼叫外部股價 / 新聞 / 專利 API）塞進 Controller。

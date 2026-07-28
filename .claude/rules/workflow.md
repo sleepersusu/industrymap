@@ -41,6 +41,18 @@
 
 修改任何既有 Service / Consumer / Helper / Repository 後，必須先搜尋並更新所有引用該 class 的現有測試檔案，再繼續 TDD 流程，否則 `test-compile` 會失敗導致 build 中斷。詳見 `.claude/rules/testing.md`。
 
+### 重構時的守衛判定（`dev-mistake-digest` 升格，2026-07-28）
+
+刪改任何既有守衛（提前 return、額外的條件判斷、看似只為效能的檢查）前，先判定它是
+**成本最佳化**還是**語意界定**：寫一個測試證明拿掉後行為不變，**證不出來就是語意守衛，不得刪改**。
+
+註解只描述成本時尤其需要確認——實際案例：`resolveByIdentifier` 的
+`exposableCompaniesOnly && distinctCompanyIds(...).size() > 1` 守衛，原註解只寫「只在真的可能歧義時
+才多這一次查詢」，看起來純粹是省一次 DB 查詢；但它同時界定了語意（單一命中的審核狀態必須留給呼叫端
+判斷）。重構時放寬成無條件執行，導致唯一命中且該公司已駁回時靜默回傳一家無關公司而非 404。
+
+確認為語意守衛後，把註解改寫成語意理由而非成本理由，避免下一個人重蹈覆轍。
+
 ### DB Schema 變更規則
 
 任何 schema 變更必須同步評估並新增 Flyway migration，不可只改 entity；規則見 `.claude/rules/flyway.md`。
