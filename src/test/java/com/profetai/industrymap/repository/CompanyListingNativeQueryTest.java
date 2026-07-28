@@ -298,6 +298,52 @@ class CompanyListingNativeQueryTest extends AbstractPostgresIntegrationTest {
     }
 
     @Test
+    @DisplayName("角色指向已駁回的品類節點時不得讓公司出現在結果中")
+    void findCompanies_roleOnRejectedItem_shouldNotSurfaceCompany() {
+        // Given：審核逐列套用，節點被駁回時掛在它下面的供應角色未必一併駁回——
+        // 「節點已駁回、角色仍有效」是可達狀態。此時公司會出現在「所有代工組裝廠」清單裡，
+        // 使用者卻找不到任何對應零件可以解釋它為什麼在，因為那個節點對外不存在
+        Item rejectedItem = rejectedItem("已駁回零件酉");
+        Company company = verifiedCompany("駁回零件供應商酉", "TW", true);
+        role(company, rejectedItem, CompanyRole.ASSEMBLY, ReviewStatus.VERIFIED);
+
+        List<Company> found = findByRole(pattern("駁回零件供應商酉"), CompanyRole.ASSEMBLY);
+
+        assertFalse(ids(found).contains(company.getId()));
+    }
+
+    @Test
+    @DisplayName("指名已駁回的品類節點查詢時同樣不得回傳其供應公司")
+    void findCompanies_itemFilterOnRejectedItem_shouldReturnNoSupplier() {
+        Item rejectedItem = rejectedItem("已駁回零件戌");
+        Company company = verifiedCompany("駁回零件供應商戌", "TW", true);
+        role(company, rejectedItem, CompanyRole.MANUFACTURE, ReviewStatus.VERIFIED);
+
+        List<Company> found = companyRepository.findCompanies(
+                VERIFIED_ONLY, "%", null, null, rejectedItem.getId(), null,
+                VERIFIED_ONLY, EXPOSABLE, LIMIT, 0);
+
+        assertFalse(ids(found).contains(company.getId()));
+    }
+
+    @Test
+    @DisplayName("角色指向草稿節點時仍應計入——草稿只是還沒審，不是判定為錯")
+    void findCompanies_roleOnDraftItem_shouldStillSurfaceCompany() {
+        Item draftItem = itemRepository.saveAndFlush(Item.builder()
+                .normalizedName(FIXTURE_PREFIX + NameNormalizer.normalizeOrEmpty("草稿零件亥"))
+                .displayName("草稿零件亥")
+                .sourceType(SourceType.MANUAL)
+                .reviewStatus(ReviewStatus.DRAFT)
+                .build());
+        Company company = verifiedCompany("草稿零件供應商亥", "TW", true);
+        role(company, draftItem, CompanyRole.ASSEMBLY, ReviewStatus.VERIFIED);
+
+        List<Company> found = findByRole(pattern("草稿零件供應商亥"), CompanyRole.ASSEMBLY);
+
+        assertTrue(ids(found).contains(company.getId()));
+    }
+
+    @Test
     @DisplayName("零件與角色併用時必須由同一筆供應角色滿足，不得由不同零件的不同角色分別命中")
     void findCompanies_itemAndRoleMustBeSatisfiedBySameRow() {
         // Given：未字公司對 A 零件有製造、對 B 零件有代工組裝——兩個條件各自都有人滿足，
@@ -476,6 +522,15 @@ class CompanyListingNativeQueryTest extends AbstractPostgresIntegrationTest {
                 .displayAlias(alias)
                 .sourceType(SourceType.MANUAL)
                 .reviewStatus(reviewStatus)
+                .build());
+    }
+
+    private Item rejectedItem(String name) {
+        return itemRepository.saveAndFlush(Item.builder()
+                .normalizedName(FIXTURE_PREFIX + NameNormalizer.normalizeOrEmpty(name))
+                .displayName(name)
+                .sourceType(SourceType.MANUAL)
+                .reviewStatus(ReviewStatus.REJECTED)
                 .build());
     }
 

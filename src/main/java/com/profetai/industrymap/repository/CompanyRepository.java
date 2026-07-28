@@ -34,6 +34,11 @@ public interface CompanyRepository extends JpaRepository<Company, Long> {
      * {@code reviewStatuses} 分開：兩者是不同資料列各自的審核狀態，公司已驗證不代表
      * 它對這個零件的關係也審過（design D3）。</p>
      *
+     * <p>角色子查詢另外 join {@code item}：關係的狀態與它指向的節點的狀態是兩回事，
+     * 一筆已驗證的角色可能掛在事後被駁回的節點上（審核逐列套用，可達狀態）。少了這個判定，
+     * 公司會出現在「所有代工組裝廠」清單裡，使用者卻找不到任何對應零件可以解釋——
+     * 那個節點對外不存在。同一條規則 {@code ItemCompositionService} 已用於組成樹。</p>
+     *
      * <p>{@code itemId} 與 {@code companyRole} 各自可選，兩者皆未指定時才跳過整個供應關係條件
      * ——最外層那組括號是必要的：{@code AND} 的優先序高於 {@code OR}，少了它雖然碰巧仍會解析成
      * 同一件事，但意圖不再顯性，日後改動極易寫錯。兩者併用時刻意走<b>單一</b> {@code EXISTS}：
@@ -48,10 +53,10 @@ public interface CompanyRepository extends JpaRepository<Company, Long> {
      * @param companyRole        供應角色名稱；null 表示不限角色。未指定 {@code itemId} 時語意為
      *                           「對任何零件具有該角色」
      * @param roleReviewStatuses  供應角色的可見審核狀態
-     * @param aliasReviewStatuses 別名的可外露審核狀態。別名是實體不是關係，因此只擋 REJECTED
-     *                            而不跟著 {@code includeDrafts} 走——被駁回的別名是「明確判定為錯」的
-     *                            寫法，不該還能把公司找出來；草稿別名只是還沒審，擋掉只會讓剛匯入的
-     *                            資料變難找，而回傳的仍是通過 {@code reviewStatuses} 的公司
+     * @param exposableStatuses  別名與品類節點這類<b>實體</b>的可外露審核狀態：只擋 REJECTED，
+     *                            不跟著 {@code includeDrafts} 走。被駁回的別名是「明確判定為錯」的寫法，
+     *                            不該還能把公司找出來；被駁回的節點對外根本不存在，掛在它上面的角色
+     *                            也就不該讓公司浮出來。草稿只是還沒審，擋掉只會讓剛匯入的資料變難找
      */
     @Query(value = """
             SELECT c.* FROM company c
@@ -60,16 +65,18 @@ public interface CompanyRepository extends JpaRepository<Company, Long> {
                    OR EXISTS (SELECT 1 FROM company_alias a
                               WHERE a.company_id = c.id
                                 AND a.normalized_alias LIKE :namePattern
-                                AND a.review_status IN (:aliasReviewStatuses)))
+                                AND a.review_status IN (:exposableStatuses)))
               AND (CAST(:country AS text) IS NULL OR upper(c.country) = upper(CAST(:country AS text)))
               AND (CAST(:publicCompany AS boolean) IS NULL
                    OR c.is_public = CAST(:publicCompany AS boolean))
               AND ((CAST(:itemId AS bigint) IS NULL AND CAST(:companyRole AS text) IS NULL)
                    OR EXISTS (SELECT 1 FROM company_item_role r
+                              JOIN item i ON i.id = r.item_id
                               WHERE r.company_id = c.id
                                 AND (CAST(:itemId AS bigint) IS NULL
                                      OR r.item_id = CAST(:itemId AS bigint))
                                 AND r.review_status IN (:roleReviewStatuses)
+                                AND i.review_status IN (:exposableStatuses)
                                 AND (CAST(:companyRole AS text) IS NULL
                                      OR r.company_role = CAST(:companyRole AS text))))
             ORDER BY c.display_name, c.id
@@ -82,7 +89,7 @@ public interface CompanyRepository extends JpaRepository<Company, Long> {
                                 @Param("itemId") Long itemId,
                                 @Param("companyRole") String companyRole,
                                 @Param("roleReviewStatuses") Collection<String> roleReviewStatuses,
-                                @Param("aliasReviewStatuses") Collection<String> aliasReviewStatuses,
+                                @Param("exposableStatuses") Collection<String> exposableStatuses,
                                 @Param("limit") int limit,
                                 @Param("offset") long offset);
 
@@ -94,16 +101,18 @@ public interface CompanyRepository extends JpaRepository<Company, Long> {
                    OR EXISTS (SELECT 1 FROM company_alias a
                               WHERE a.company_id = c.id
                                 AND a.normalized_alias LIKE :namePattern
-                                AND a.review_status IN (:aliasReviewStatuses)))
+                                AND a.review_status IN (:exposableStatuses)))
               AND (CAST(:country AS text) IS NULL OR upper(c.country) = upper(CAST(:country AS text)))
               AND (CAST(:publicCompany AS boolean) IS NULL
                    OR c.is_public = CAST(:publicCompany AS boolean))
               AND ((CAST(:itemId AS bigint) IS NULL AND CAST(:companyRole AS text) IS NULL)
                    OR EXISTS (SELECT 1 FROM company_item_role r
+                              JOIN item i ON i.id = r.item_id
                               WHERE r.company_id = c.id
                                 AND (CAST(:itemId AS bigint) IS NULL
                                      OR r.item_id = CAST(:itemId AS bigint))
                                 AND r.review_status IN (:roleReviewStatuses)
+                                AND i.review_status IN (:exposableStatuses)
                                 AND (CAST(:companyRole AS text) IS NULL
                                      OR r.company_role = CAST(:companyRole AS text))))
             """, nativeQuery = true)
@@ -114,5 +123,5 @@ public interface CompanyRepository extends JpaRepository<Company, Long> {
                         @Param("itemId") Long itemId,
                         @Param("companyRole") String companyRole,
                         @Param("roleReviewStatuses") Collection<String> roleReviewStatuses,
-                        @Param("aliasReviewStatuses") Collection<String> aliasReviewStatuses);
+                        @Param("exposableStatuses") Collection<String> exposableStatuses);
 }

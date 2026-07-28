@@ -276,13 +276,13 @@ public class CompanyService {
         // 送進 SQL 就變成負的 OFFSET，資料庫直接報錯而非回空頁
         long offset = (long) query.getPage() * query.getSize();
 
-        // 別名走 exposableStatusNames 而非 reviewStatuses：別名是實體不是關係，只擋 REJECTED
-        Collection<String> aliasReviewStatuses = ReviewScopes.exposableStatusNames();
+        // 別名與品類節點走 exposableStatusNames 而非 reviewStatuses：它們是實體不是關係，只擋 REJECTED
+        Collection<String> exposableStatuses = ReviewScopes.exposableStatusNames();
 
         long totalElements = companyRepository.countCompanies(reviewStatuses, namePattern, country,
-                query.getPublicCompany(), query.getItemId(), companyRole, reviewStatuses, aliasReviewStatuses);
+                query.getPublicCompany(), query.getItemId(), companyRole, reviewStatuses, exposableStatuses);
         List<Company> companies = companyRepository.findCompanies(reviewStatuses, namePattern, country,
-                query.getPublicCompany(), query.getItemId(), companyRole, reviewStatuses, aliasReviewStatuses,
+                query.getPublicCompany(), query.getItemId(), companyRole, reviewStatuses, exposableStatuses,
                 query.getSize(), offset);
 
         return PageResponse.of(toResponses(companies), query.getPage(), query.getSize(), totalElements);

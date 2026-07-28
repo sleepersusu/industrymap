@@ -30,7 +30,8 @@
       回歸：`?itemId=264` → 2 筆、`?itemId=264&companyRole=DESIGN` → 2 筆、
       不帶條件總數仍為 50，皆與改動前一致；`?itemId=264&companyRole=ASSEMBLY` → 0 筆；
       只給 companyRole 由 400 改為 200
-- [ ] 4.4 以 fresh-context diff review 審查（`/code-review`），只修正確性 findings（待使用者觸發）
+- [x] 4.4 以 fresh-context diff review 審查：1 筆 finding，先以失敗測試證實再修——
+      供應角色的 EXISTS 未排除已駁回的品類節點，已驗證角色掛在已駁回節點上時仍會把公司帶出來
 - [x] 4.5 更新 `docs/CHANGELOG.md`：同 scope 同主題且尚未發布，合併改寫既有的公司列表項目而非新增一筆
 - [x] 4.6 評估索引：現況 85 筆供應角色、50 家公司，`EXISTS` 靠 `company_id` 收斂已足夠，
       實測各組合皆即時回應，**本次不加索引**（design Risks 的既定取捨）；
