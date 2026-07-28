@@ -42,10 +42,15 @@
 因此新增列舉值是純 Java 改動。**唯一需要 migration 的是既有 3 筆資料的轉換**，
 且該 migration 只有 `UPDATE`，不含任何 DDL。
 
-- **migration 必須以自然鍵定位那 3 筆**（`identifier_type = 'OTHER'` 且 `identifier_value`
-  等於特定字串），**不可用內部 id**——各環境的自增 id 不同
-- **必須具冪等性考量**：`WHERE identifier_type = 'OTHER' AND identifier_value = 'HKEX:6088'`
-  這種條件在重跑時自然不再命中，符合 Flyway 一次性執行的前提
+- **migration 必須以自然鍵定位**（`identifier_type = 'OTHER'` 加值的前綴），**不可用內部 id**——各環境的自增 id 不同
+- **條件用前綴模式而非逐筆列舉精確值**（實作時修正）：
+  `WHERE identifier_type = 'OTHER' AND identifier_value LIKE 'HKEX:%'`，值取冒號後段。
+  原本規劃寫死 `= 'HKEX:6088'` 這類精確值，但那樣**寫不出誠實的整合測試**——
+  乾淨的 Testcontainer 上沒有那幾筆資料可斷言，共用的本機開發 DB 上 Flyway 已在
+  context 啟動時轉換完畢，測試自建的同值 fixture 轉換後會與真實資料撞唯一鍵。
+  前綴條件讓測試能用自己的 fixture（如 `HKEX:it-6088`）跑同一段 SQL，兩種環境都成立；
+  今天命中的仍是同樣那 3 筆
+- **必須具冪等性考量**：轉換後值不再帶前綴，重跑時條件自然不再命中，符合 Flyway 一次性執行的前提
 - 版號依 `.claude/rules/flyway.md`：先查主線 `db/migration` 最新一支再訂，不可憑空假設
 
 ### D3：`unique(type, value)` 在轉換過程可能撞號——必須先確認

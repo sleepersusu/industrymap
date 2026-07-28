@@ -143,6 +143,40 @@ class CompanyServiceTest {
     }
 
     @Test
+    @DisplayName("以香港交易所類型與純代號登記識別碼應成功，交易所資訊不進入值")
+    void addIdentifier_hongKongExchangeWithPlainCode_shouldPersist() {
+        when(companyRepository.findById(1L)).thenReturn(Optional.of(tsmc));
+        when(companyIdentifierRepository.existsByIdentifierTypeAndIdentifierValue(IdentifierType.HKEX, "0992"))
+                .thenReturn(false);
+        when(companyIdentifierRepository.save(any(CompanyIdentifier.class)))
+                .thenAnswer(invocation -> invocation.getArgument(0));
+
+        CompanyIdentifier created =
+                companyService.addIdentifier(1L, identifierRequest(IdentifierType.HKEX, "0992", true));
+
+        assertAll(
+                () -> assertEquals(IdentifierType.HKEX, created.getIdentifierType()),
+                () -> assertEquals("0992", created.getIdentifierValue()));
+    }
+
+    @Test
+    @DisplayName("以法蘭克福交易所類型與純代號登記識別碼應成功，交易所資訊不進入值")
+    void addIdentifier_frankfurtExchangeWithPlainCode_shouldPersist() {
+        when(companyRepository.findById(1L)).thenReturn(Optional.of(tsmc));
+        when(companyIdentifierRepository.existsByIdentifierTypeAndIdentifierValue(IdentifierType.FSE, "IFX"))
+                .thenReturn(false);
+        when(companyIdentifierRepository.save(any(CompanyIdentifier.class)))
+                .thenAnswer(invocation -> invocation.getArgument(0));
+
+        CompanyIdentifier created =
+                companyService.addIdentifier(1L, identifierRequest(IdentifierType.FSE, "IFX", true));
+
+        assertAll(
+                () -> assertEquals(IdentifierType.FSE, created.getIdentifierType()),
+                () -> assertEquals("IFX", created.getIdentifierValue()));
+    }
+
+    @Test
     @DisplayName("以交易所代號 2330 查詢應回傳對應公司")
     void getByIdentifierValue_existingCode_shouldReturnCompany() {
         when(companyIdentifierRepository.findByIdentifierValue("2330")).thenReturn(List.of(

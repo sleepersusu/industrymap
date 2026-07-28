@@ -123,6 +123,20 @@ class CoreSchemaConstraintTest extends AbstractPostgresIntegrationTest {
     }
 
     @Test
+    @DisplayName("同一數字代號在不同交易所類型下應可各自登記，唯一鍵含類型才擋得住真正的重複")
+    void saveIdentifier_sameCodeUnderDifferentExchanges_shouldCoexist() {
+        Company lenovo = companyRepository.saveAndFlush(company("聯想", "聯想"));
+        Company sseListed = companyRepository.saveAndFlush(company("某滬市公司", "某滬市公司"));
+        companyIdentifierRepository.saveAndFlush(identifier(lenovo, IdentifierType.HKEX, "0992", true));
+
+        CompanyIdentifier onSse =
+                companyIdentifierRepository.saveAndFlush(identifier(sseListed, IdentifierType.SSE, "0992", true));
+
+        assertNotNull(onSse.getId());
+        assertEquals(2, companyIdentifierRepository.findByIdentifierValue(FIXTURE_PREFIX + "0992").size());
+    }
+
+    @Test
     @DisplayName("同一公司第二筆主要識別碼應被 partial unique index 擋下")
     void saveIdentifier_secondPrimaryForSameCompany_shouldViolateUniqueIndex() {
         Company tsmc = companyRepository.saveAndFlush(company("台積電", "台積電"));

@@ -335,8 +335,16 @@ curl -X POST http://localhost:8080/api/bulk/identifiers \
   }'
 ```
 
-`identifierType`：`TWSE` / `TPEX` / `TSE` / `NASDAQ` / `NYSE` / `TAX_ID` / `DUNS` / `OTHER`。
+`identifierType`：
+交易所——`TWSE` / `TPEX` / `TSE`（東京）/ `NASDAQ` / `NYSE` / `HKEX`（香港）/ `FSE`（法蘭克福）/
+`KRX`（韓國）/ `SSE`（上海）/ `SZSE`（深圳）/ `LSE`（倫敦）；
+非交易所——`TAX_ID` / `DUNS` / `OTHER`。
 每家公司至多一筆 `primary`。
+
+`identifierValue` 只填代號本身，交易所資訊由 `identifierType` 承載——
+**不可**寫成 `HKEX:6088` 這種把交易所塞進值裡的形式。遇到清單上沒有的交易所時，
+正確做法是擴充 `IdentifierType`（純 Java 改動，不需 schema migration），
+而不是用 `OTHER` 加自訂前綴；`OTHER` 只留給非交易所的識別體系。
 
 供應角色：
 
@@ -710,18 +718,23 @@ curl -s "http://localhost:8080/api/items/81/end-products"
 可能方向：補 `/api/bulk/item-aliases` 與 `/api/bulk/company-aliases`，回應對齊其他批次端點
 （帶 `targetType` 與 `naturalKey`）。
 
-### G4：`IdentifierType` 涵蓋不到香港、法蘭克福等交易所
+### G4：`IdentifierType` 涵蓋不到香港、法蘭克福等交易所（2026-07-28 已解決）
 
-enum 目前是 `TWSE` / `TPEX` / `TSE` / `NASDAQ` / `NYSE` / `TAX_ID` / `DUNS` / `OTHER`。
+enum 原本是 `TWSE` / `TPEX` / `TSE` / `NASDAQ` / `NYSE` / `TAX_ID` / `DUNS` / `OTHER`。
 2026-07-28 輪次要登記鴻騰精密（香港 6088）與 Infineon（法蘭克福 IFX）時無對應類型，
 只能用 `OTHER` 並把交易所塞進值裡（`HKEX:6088`、`FSE:IFX`）。
 
 影響：`unique(type, value)` 的語意被稀釋——`OTHER` 底下混雜多個編碼體系，值的格式全靠人工約定；
-日後要以交易所為條件查詢（例如「所有港股供應商」）也做不到。供應鏈往上游走一定會遇到日、韓、
-中、歐廠商，這個問題只會擴大。
+日後要以交易所為條件查詢（例如「所有港股供應商」）也做不到。
 
-可能方向：擴充 enum（`HKEX`、`FSE`、`KRX`、`SSE`／`SZSE` 等），或改為「交易所代碼 + 證券代號」
-兩欄位，讓 `OTHER` 回歸真正的例外用途。
+**解法（change `add-exchange-identifier-types`）**：補上 `HKEX`、`FSE`、`KRX`、`SSE`、`SZSE`、`LSE`
+六個交易所類型，並以 data migration（`V2026_07_28_100100`）把既有 3 筆 `OTHER` 資料轉為正規類型、
+值去掉前綴。**`OTHER` 的新界線**：只用於非交易所的識別體系；公司在某交易所掛牌而 enum 沒有對應值時，
+應擴充 enum（`identifier_type` 是 VARCHAR 且無 check constraint，加列舉值不需 schema migration），
+不得以 `OTHER` 加自訂前綴登記。
+
+**留給日後的判準**：這次選 migration 而非做識別碼修正端點，唯一理由是待修資料只有個位數筆數。
+若再出現需要修改既有識別碼的情況，應該做修正端點，而不是再寫一支 migration。
 
 ### G5：沒有「掛零供應商的節點」反查
 
