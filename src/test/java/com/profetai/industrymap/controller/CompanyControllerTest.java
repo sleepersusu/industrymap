@@ -147,6 +147,15 @@ class CompanyControllerTest {
     }
 
     @Test
+    @DisplayName("列出公司時只給 companyRole 而未給 itemId 應回 400，不得靜默忽略")
+    void listCompanies_companyRoleWithoutItemId_shouldReturnBadRequest() throws Exception {
+        // 角色過濾只在 itemId 的子查詢內生效；未帶 itemId 時整個條件不套用，
+        // 呼叫端會拿到全部公司卻以為那是「所有代工組裝廠」
+        mockMvc.perform(get("/api/companies").param("companyRole", "ASSEMBLY"))
+                .andExpect(status().isBadRequest());
+    }
+
+    @Test
     @DisplayName("列出公司時指定不存在的品類節點應回 404")
     void listCompanies_unknownItemId_shouldReturnNotFound() throws Exception {
         when(companyService.findCompanies(any(CompanyQuery.class)))

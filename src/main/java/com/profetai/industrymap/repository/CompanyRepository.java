@@ -40,7 +40,11 @@ public interface CompanyRepository extends JpaRepository<Company, Long> {
      * @param publicCompany      是否公開發行；null 表示不過濾
      * @param itemId             品類節點 id；null 表示不依供應零件過濾
      * @param companyRole        供應角色名稱；null 表示不限角色
-     * @param roleReviewStatuses 供應角色的可見審核狀態
+     * @param roleReviewStatuses  供應角色的可見審核狀態
+     * @param aliasReviewStatuses 別名的可外露審核狀態。別名是實體不是關係，因此只擋 REJECTED
+     *                            而不跟著 {@code includeDrafts} 走——被駁回的別名是「明確判定為錯」的
+     *                            寫法，不該還能把公司找出來；草稿別名只是還沒審，擋掉只會讓剛匯入的
+     *                            資料變難找，而回傳的仍是通過 {@code reviewStatuses} 的公司
      */
     @Query(value = """
             SELECT c.* FROM company c
@@ -48,7 +52,8 @@ public interface CompanyRepository extends JpaRepository<Company, Long> {
               AND (c.normalized_name LIKE :namePattern
                    OR EXISTS (SELECT 1 FROM company_alias a
                               WHERE a.company_id = c.id
-                                AND a.normalized_alias LIKE :namePattern))
+                                AND a.normalized_alias LIKE :namePattern
+                                AND a.review_status IN (:aliasReviewStatuses)))
               AND (CAST(:country AS text) IS NULL OR upper(c.country) = upper(CAST(:country AS text)))
               AND (CAST(:publicCompany AS boolean) IS NULL
                    OR c.is_public = CAST(:publicCompany AS boolean))
@@ -69,6 +74,7 @@ public interface CompanyRepository extends JpaRepository<Company, Long> {
                                 @Param("itemId") Long itemId,
                                 @Param("companyRole") String companyRole,
                                 @Param("roleReviewStatuses") Collection<String> roleReviewStatuses,
+                                @Param("aliasReviewStatuses") Collection<String> aliasReviewStatuses,
                                 @Param("limit") int limit,
                                 @Param("offset") long offset);
 
@@ -79,7 +85,8 @@ public interface CompanyRepository extends JpaRepository<Company, Long> {
               AND (c.normalized_name LIKE :namePattern
                    OR EXISTS (SELECT 1 FROM company_alias a
                               WHERE a.company_id = c.id
-                                AND a.normalized_alias LIKE :namePattern))
+                                AND a.normalized_alias LIKE :namePattern
+                                AND a.review_status IN (:aliasReviewStatuses)))
               AND (CAST(:country AS text) IS NULL OR upper(c.country) = upper(CAST(:country AS text)))
               AND (CAST(:publicCompany AS boolean) IS NULL
                    OR c.is_public = CAST(:publicCompany AS boolean))
@@ -97,5 +104,6 @@ public interface CompanyRepository extends JpaRepository<Company, Long> {
                         @Param("publicCompany") Boolean publicCompany,
                         @Param("itemId") Long itemId,
                         @Param("companyRole") String companyRole,
-                        @Param("roleReviewStatuses") Collection<String> roleReviewStatuses);
+                        @Param("roleReviewStatuses") Collection<String> roleReviewStatuses,
+                        @Param("aliasReviewStatuses") Collection<String> aliasReviewStatuses);
 }

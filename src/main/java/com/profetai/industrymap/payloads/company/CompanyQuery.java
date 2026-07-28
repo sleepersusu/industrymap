@@ -2,6 +2,7 @@ package com.profetai.industrymap.payloads.company;
 
 import com.profetai.industrymap.enums.CompanyRole;
 import io.swagger.v3.oas.annotations.media.Schema;
+import jakarta.validation.constraints.AssertTrue;
 import jakarta.validation.constraints.Max;
 import jakarta.validation.constraints.Min;
 import lombok.AllArgsConstructor;
@@ -55,4 +56,17 @@ public class CompanyQuery {
     @Builder.Default
     @Schema(description = "是否納入草稿資料；已駁回一律不外露", example = "false")
     private boolean includeDrafts = false;
+
+    /**
+     * 角色過濾只在指定零件的前提下才有意義——它收斂的是「對<b>這個零件</b>的角色」。
+     *
+     * <p>單獨給 companyRole 而不給 itemId 時必須回 400 而非默默忽略：忽略的話呼叫端會拿到
+     * 全部公司卻以為那是「所有代工組裝廠」，錯得無聲無息。若日後真要支援「對任何零件具有該角色」
+     * 的查詢，那是新的能力，應循 spec 擴充而不是讓這個參數悄悄改變語意。</p>
+     */
+    @AssertTrue(message = "companyRole 需搭配 itemId 使用")
+    @Schema(hidden = true)
+    public boolean isCompanyRoleScopedToItem() {
+        return companyRole == null || itemId != null;
+    }
 }

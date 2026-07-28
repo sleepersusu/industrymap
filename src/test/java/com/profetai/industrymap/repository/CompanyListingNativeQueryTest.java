@@ -36,6 +36,9 @@ class CompanyListingNativeQueryTest extends AbstractPostgresIntegrationTest {
     private static final Set<String> VERIFIED_ONLY = Set.of(ReviewStatus.VERIFIED.name());
     private static final Set<String> WITH_DRAFTS =
             Set.of(ReviewStatus.VERIFIED.name(), ReviewStatus.DRAFT.name());
+    /** 別名的可外露範圍：實體只擋 REJECTED，不跟著 includeDrafts 走 */
+    private static final Set<String> EXPOSABLE =
+            Set.of(ReviewStatus.VERIFIED.name(), ReviewStatus.DRAFT.name());
     private static final int LIMIT = 50;
 
     @Autowired
@@ -104,9 +107,36 @@ class CompanyListingNativeQueryTest extends AbstractPostgresIntegrationTest {
 
         List<Company> found = companyRepository.findCompanies(
                 VERIFIED_ONLY, "%" + NameNormalizer.normalizeOrEmpty("中綴標記") + "%",
-                null, null, null, null, VERIFIED_ONLY, LIMIT, 0);
+                null, null, null, null, VERIFIED_ONLY, EXPOSABLE, LIMIT, 0);
 
         // 樣式未帶 fixture 前綴，開發資料庫可能有其他資料一併命中，因此只斷言包含關係
+        assertTrue(ids(found).contains(company.getId()));
+    }
+
+    @Test
+    @DisplayName("已駁回的別名不得成為搜尋鍵")
+    void findCompanies_rejectedAlias_shouldNotMatch() {
+        // Given：公司本身已驗證，但有一筆被審核者駁回的錯誤別名
+        Company company = verifiedCompany("駁回別名公司壬", "TW", true);
+        alias(company, "壬字誤植別名", ReviewStatus.REJECTED);
+
+        // When：以那個被駁回的別名搜尋
+        List<Company> found = find(pattern("壬字誤植別名"));
+
+        // Then：被明確判定為錯誤的別名不該還能把公司找出來
+        assertFalse(ids(found).contains(company.getId()));
+    }
+
+    @Test
+    @DisplayName("草稿別名仍應可搜到已驗證公司")
+    void findCompanies_draftAlias_shouldStillMatch() {
+        // 別名是查找路徑而非回應內容，最終回傳的仍是已驗證公司；
+        // 擋掉草稿別名只會讓剛匯入的資料變難找（ReviewScopes：實體只擋 REJECTED）
+        Company company = verifiedCompany("草稿別名公司癸", "TW", true);
+        alias(company, "癸字草稿別名", ReviewStatus.DRAFT);
+
+        List<Company> found = find(pattern("癸字草稿別名"));
+
         assertTrue(ids(found).contains(company.getId()));
     }
 
@@ -117,9 +147,9 @@ class CompanyListingNativeQueryTest extends AbstractPostgresIntegrationTest {
         verifiedCompany("公司甲美國", "US", true);
 
         List<Company> lowerCase = companyRepository.findCompanies(
-                VERIFIED_ONLY, pattern("公司甲"), "tw", null, null, null, VERIFIED_ONLY, LIMIT, 0);
+                VERIFIED_ONLY, pattern("公司甲"), "tw", null, null, null, VERIFIED_ONLY, EXPOSABLE, LIMIT, 0);
         List<Company> upperCase = companyRepository.findCompanies(
-                VERIFIED_ONLY, pattern("公司甲"), "TW", null, null, null, VERIFIED_ONLY, LIMIT, 0);
+                VERIFIED_ONLY, pattern("公司甲"), "TW", null, null, null, VERIFIED_ONLY, EXPOSABLE, LIMIT, 0);
 
         assertAll(
                 () -> assertEquals(List.of(taiwanese.getId()), ids(lowerCase)),
@@ -133,9 +163,9 @@ class CompanyListingNativeQueryTest extends AbstractPostgresIntegrationTest {
         Company unlisted = verifiedCompany("公司乙未上市", "TW", false);
 
         List<Company> onlyPublic = companyRepository.findCompanies(
-                VERIFIED_ONLY, pattern("公司乙"), null, true, null, null, VERIFIED_ONLY, LIMIT, 0);
+                VERIFIED_ONLY, pattern("公司乙"), null, true, null, null, VERIFIED_ONLY, EXPOSABLE, LIMIT, 0);
         List<Company> onlyPrivate = companyRepository.findCompanies(
-                VERIFIED_ONLY, pattern("公司乙"), null, false, null, null, VERIFIED_ONLY, LIMIT, 0);
+                VERIFIED_ONLY, pattern("公司乙"), null, false, null, null, VERIFIED_ONLY, EXPOSABLE, LIMIT, 0);
 
         assertAll(
                 () -> assertEquals(List.of(listed.getId()), ids(onlyPublic)),
@@ -168,9 +198,9 @@ class CompanyListingNativeQueryTest extends AbstractPostgresIntegrationTest {
 
         // When
         List<Company> found = companyRepository.findCompanies(
-                VERIFIED_ONLY, "%", null, null, pcb.getId(), null, VERIFIED_ONLY, LIMIT, 0);
+                VERIFIED_ONLY, "%", null, null, pcb.getId(), null, VERIFIED_ONLY, EXPOSABLE, LIMIT, 0);
         long total = companyRepository.countCompanies(
-                VERIFIED_ONLY, "%", null, null, pcb.getId(), null, VERIFIED_ONLY);
+                VERIFIED_ONLY, "%", null, null, pcb.getId(), null, VERIFIED_ONLY, EXPOSABLE);
 
         // Then：兩個角色只能讓公司出現一次
         assertAll(
@@ -190,7 +220,7 @@ class CompanyListingNativeQueryTest extends AbstractPostgresIntegrationTest {
 
         List<Company> found = companyRepository.findCompanies(
                 VERIFIED_ONLY, "%", null, null, pcb.getId(), CompanyRole.ASSEMBLY.name(),
-                VERIFIED_ONLY, LIMIT, 0);
+                VERIFIED_ONLY, EXPOSABLE, LIMIT, 0);
 
         assertEquals(List.of(assembler.getId()), ids(found));
     }
@@ -205,9 +235,9 @@ class CompanyListingNativeQueryTest extends AbstractPostgresIntegrationTest {
         role(draftSupplier, sensor, CompanyRole.MANUFACTURE, ReviewStatus.DRAFT);
 
         List<Company> defaultScope = companyRepository.findCompanies(
-                VERIFIED_ONLY, "%", null, null, sensor.getId(), null, VERIFIED_ONLY, LIMIT, 0);
+                VERIFIED_ONLY, "%", null, null, sensor.getId(), null, VERIFIED_ONLY, EXPOSABLE, LIMIT, 0);
         List<Company> withDrafts = companyRepository.findCompanies(
-                WITH_DRAFTS, "%", null, null, sensor.getId(), null, WITH_DRAFTS, LIMIT, 0);
+                WITH_DRAFTS, "%", null, null, sensor.getId(), null, WITH_DRAFTS, EXPOSABLE, LIMIT, 0);
 
         assertAll(
                 () -> assertFalse(ids(defaultScope).contains(draftSupplier.getId())),
@@ -221,7 +251,7 @@ class CompanyListingNativeQueryTest extends AbstractPostgresIntegrationTest {
         Company draft = company("公司庚草稿", "TW", true, ReviewStatus.DRAFT);
 
         List<Company> withDrafts = companyRepository.findCompanies(
-                WITH_DRAFTS, pattern("公司庚"), null, null, null, null, WITH_DRAFTS, LIMIT, 0);
+                WITH_DRAFTS, pattern("公司庚"), null, null, null, null, WITH_DRAFTS, EXPOSABLE, LIMIT, 0);
 
         assertAll(
                 () -> assertTrue(ids(withDrafts).contains(draft.getId())),
@@ -239,7 +269,7 @@ class CompanyListingNativeQueryTest extends AbstractPostgresIntegrationTest {
         role(wrongCountry, chain, CompanyRole.MANUFACTURE, ReviewStatus.VERIFIED);
 
         List<Company> found = companyRepository.findCompanies(
-                VERIFIED_ONLY, pattern("鏈條"), "TW", true, chain.getId(), null, VERIFIED_ONLY, LIMIT, 0);
+                VERIFIED_ONLY, pattern("鏈條"), "TW", true, chain.getId(), null, VERIFIED_ONLY, EXPOSABLE, LIMIT, 0);
 
         assertAll(
                 () -> assertEquals(List.of(match.getId()), ids(found)),
@@ -255,9 +285,9 @@ class CompanyListingNativeQueryTest extends AbstractPostgresIntegrationTest {
 
         String pattern = pattern("分頁公司");
         List<Company> page0 = companyRepository.findCompanies(
-                VERIFIED_ONLY, pattern, null, null, null, null, VERIFIED_ONLY, 2, 0);
+                VERIFIED_ONLY, pattern, null, null, null, null, VERIFIED_ONLY, EXPOSABLE, 2, 0);
         List<Company> page1 = companyRepository.findCompanies(
-                VERIFIED_ONLY, pattern, null, null, null, null, VERIFIED_ONLY, 2, 2);
+                VERIFIED_ONLY, pattern, null, null, null, null, VERIFIED_ONLY, EXPOSABLE, 2, 2);
 
         assertAll(
                 () -> assertEquals(2, page0.size()),
@@ -279,12 +309,12 @@ class CompanyListingNativeQueryTest extends AbstractPostgresIntegrationTest {
 
     private List<Company> find(String namePattern) {
         return companyRepository.findCompanies(
-                VERIFIED_ONLY, namePattern, null, null, null, null, VERIFIED_ONLY, LIMIT, 0);
+                VERIFIED_ONLY, namePattern, null, null, null, null, VERIFIED_ONLY, EXPOSABLE, LIMIT, 0);
     }
 
     private long countMatching(String namePattern) {
         return companyRepository.countCompanies(
-                VERIFIED_ONLY, namePattern, null, null, null, null, VERIFIED_ONLY);
+                VERIFIED_ONLY, namePattern, null, null, null, null, VERIFIED_ONLY, EXPOSABLE);
     }
 
     private List<Long> ids(List<Company> companies) {
@@ -318,12 +348,16 @@ class CompanyListingNativeQueryTest extends AbstractPostgresIntegrationTest {
     }
 
     private void alias(Company company, String alias) {
+        alias(company, alias, ReviewStatus.VERIFIED);
+    }
+
+    private void alias(Company company, String alias, ReviewStatus reviewStatus) {
         companyAliasRepository.saveAndFlush(CompanyAlias.builder()
                 .company(company)
                 .normalizedAlias(FIXTURE_PREFIX + NameNormalizer.normalizeOrEmpty(alias))
                 .displayAlias(alias)
                 .sourceType(SourceType.MANUAL)
-                .reviewStatus(ReviewStatus.VERIFIED)
+                .reviewStatus(reviewStatus)
                 .build());
     }
 

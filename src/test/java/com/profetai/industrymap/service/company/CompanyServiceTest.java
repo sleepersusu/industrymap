@@ -672,7 +672,7 @@ class CompanyServiceTest {
         // Then：送進查詢的審核範圍只能有 VERIFIED
         ArgumentCaptor<Collection<String>> statuses = ArgumentCaptor.forClass(Collection.class);
         verify(companyRepository).findCompanies(statuses.capture(), any(), any(), any(), any(), any(),
-                any(), anyInt(), anyLong());
+                any(), any(), anyInt(), anyLong());
         assertAll(
                 () -> assertEquals(Set.of(ReviewStatus.VERIFIED.name()), Set.copyOf(statuses.getValue())),
                 () -> assertEquals(1, page.getContent().size()),
@@ -691,7 +691,7 @@ class CompanyServiceTest {
 
         ArgumentCaptor<Collection<String>> statuses = ArgumentCaptor.forClass(Collection.class);
         verify(companyRepository).findCompanies(statuses.capture(), any(), any(), any(), any(), any(),
-                any(), anyInt(), anyLong());
+                any(), any(), anyInt(), anyLong());
         assertAll(
                 () -> assertEquals(
                         Set.of(ReviewStatus.VERIFIED.name(), ReviewStatus.DRAFT.name()),
@@ -709,7 +709,7 @@ class CompanyServiceTest {
         // 已駁回一律不外露：範圍由 ReviewScopes 決定，這裡確認沒有任何路徑把它加回來
         ArgumentCaptor<Collection<String>> statuses = ArgumentCaptor.forClass(Collection.class);
         verify(companyRepository).findCompanies(statuses.capture(), any(), any(), any(), any(), any(),
-                any(), anyInt(), anyLong());
+                any(), any(), anyInt(), anyLong());
         assertFalse(statuses.getValue().contains(ReviewStatus.REJECTED.name()));
     }
 
@@ -724,7 +724,7 @@ class CompanyServiceTest {
         assertAll(
                 () -> assertEquals(HttpStatus.NOT_FOUND, ex.getHttpStatus()),
                 () -> verify(companyRepository, never()).findCompanies(any(), any(), any(), any(), any(),
-                        any(), any(), anyInt(), anyLong()));
+                        any(), any(), any(), anyInt(), anyLong()));
     }
 
     @Test
@@ -778,7 +778,7 @@ class CompanyServiceTest {
         // Then：送進查詢的國別必須是 null
         ArgumentCaptor<String> country = ArgumentCaptor.forClass(String.class);
         verify(companyRepository).findCompanies(any(), any(), country.capture(), any(), any(), any(),
-                any(), anyInt(), anyLong());
+                any(), any(), anyInt(), anyLong());
         assertNull(country.getValue());
     }
 
@@ -791,7 +791,7 @@ class CompanyServiceTest {
 
         ArgumentCaptor<String> country = ArgumentCaptor.forClass(String.class);
         verify(companyRepository).findCompanies(any(), any(), country.capture(), any(), any(), any(),
-                any(), anyInt(), anyLong());
+                any(), any(), anyInt(), anyLong());
         assertEquals("TW", country.getValue());
     }
 
@@ -804,16 +804,16 @@ class CompanyServiceTest {
 
         // int 相乘會溢位成負數，送進 SQL 就是負的 OFFSET，資料庫直接報錯
         ArgumentCaptor<Long> offset = ArgumentCaptor.forClass(Long.class);
-        verify(companyRepository).findCompanies(any(), any(), any(), any(), any(), any(), any(),
+        verify(companyRepository).findCompanies(any(), any(), any(), any(), any(), any(), any(), any(),
                 eq(100), offset.capture());
         assertEquals(300_000_000L, offset.getValue());
     }
 
     /** 列表查詢的共用 stub：內容與總筆數由呼叫端指定，其餘條件不設限 */
     private void givenListing(List<Company> companies, long totalElements) {
-        when(companyRepository.findCompanies(any(), any(), any(), any(), any(), any(), any(),
+        when(companyRepository.findCompanies(any(), any(), any(), any(), any(), any(), any(), any(),
                 anyInt(), anyLong())).thenReturn(companies);
-        when(companyRepository.countCompanies(any(), any(), any(), any(), any(), any(), any()))
+        when(companyRepository.countCompanies(any(), any(), any(), any(), any(), any(), any(), any()))
                 .thenReturn(totalElements);
         lenient().when(companyIdentifierRepository.findByCompanyIdIn(any())).thenReturn(List.of());
     }

@@ -2,6 +2,7 @@ package com.profetai.industrymap.helper;
 
 import com.profetai.industrymap.enums.ReviewStatus;
 
+import java.util.EnumSet;
 import java.util.Set;
 import java.util.stream.Collectors;
 
@@ -27,6 +28,19 @@ public final class ReviewScopes {
     /** 供 native SQL 使用：native 查詢的列舉繫結以字串傳入較明確 */
     public static Set<String> visibleStatusNames(boolean includeDrafts) {
         return visibleStatuses(includeDrafts).stream().map(Enum::name).collect(Collectors.toUnmodifiableSet());
+    }
+
+    /**
+     * {@link #isExposable} 的字串集合版，供 native SQL 的 {@code IN} 使用。
+     *
+     * <p>與 {@link #visibleStatusNames} 的差別就是實體與關係的差別：關係的草稿取捨跟著呼叫端的
+     * {@code includeDrafts} 走，實體則一律只擋 REJECTED。以補集導出而非列舉可外露的值，
+     * 日後新增狀態時不會漏掉。</p>
+     */
+    public static Set<String> exposableStatusNames() {
+        return EnumSet.complementOf(EnumSet.of(ReviewStatus.REJECTED)).stream()
+                .map(Enum::name)
+                .collect(Collectors.toUnmodifiableSet());
     }
 
     /**
