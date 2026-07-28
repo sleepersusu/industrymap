@@ -34,12 +34,19 @@ public interface CompanyRepository extends JpaRepository<Company, Long> {
      * {@code reviewStatuses} 分開：兩者是不同資料列各自的審核狀態，公司已驗證不代表
      * 它對這個零件的關係也審過（design D3）。</p>
      *
+     * <p>{@code itemId} 與 {@code companyRole} 各自可選，兩者皆未指定時才跳過整個供應關係條件
+     * ——最外層那組括號是必要的：{@code AND} 的優先序高於 {@code OR}，少了它雖然碰巧仍會解析成
+     * 同一件事，但意圖不再顯性，日後改動極易寫錯。兩者併用時刻意走<b>單一</b> {@code EXISTS}：
+     * 拆成兩個子查詢會讓「A 零件的製造角色」與「B 零件的組裝角色」分別命中，
+     * 於是一家對 A 只做製造的公司會出現在「A 零件＋組裝」的結果裡（design D1）。</p>
+     *
      * @param reviewStatuses     公司本身的可見審核狀態
      * @param namePattern        比對正規化名稱與別名的 LIKE 樣式；不過濾時傳 {@code %}
      * @param country            國別，不分大小寫的精確比對；null 表示不過濾
      * @param publicCompany      是否公開發行；null 表示不過濾
-     * @param itemId             品類節點 id；null 表示不依供應零件過濾
-     * @param companyRole        供應角色名稱；null 表示不限角色
+     * @param itemId             品類節點 id；null 表示不限零件
+     * @param companyRole        供應角色名稱；null 表示不限角色。未指定 {@code itemId} 時語意為
+     *                           「對任何零件具有該角色」
      * @param roleReviewStatuses  供應角色的可見審核狀態
      * @param aliasReviewStatuses 別名的可外露審核狀態。別名是實體不是關係，因此只擋 REJECTED
      *                            而不跟著 {@code includeDrafts} 走——被駁回的別名是「明確判定為錯」的
@@ -57,10 +64,11 @@ public interface CompanyRepository extends JpaRepository<Company, Long> {
               AND (CAST(:country AS text) IS NULL OR upper(c.country) = upper(CAST(:country AS text)))
               AND (CAST(:publicCompany AS boolean) IS NULL
                    OR c.is_public = CAST(:publicCompany AS boolean))
-              AND (CAST(:itemId AS bigint) IS NULL
+              AND ((CAST(:itemId AS bigint) IS NULL AND CAST(:companyRole AS text) IS NULL)
                    OR EXISTS (SELECT 1 FROM company_item_role r
                               WHERE r.company_id = c.id
-                                AND r.item_id = CAST(:itemId AS bigint)
+                                AND (CAST(:itemId AS bigint) IS NULL
+                                     OR r.item_id = CAST(:itemId AS bigint))
                                 AND r.review_status IN (:roleReviewStatuses)
                                 AND (CAST(:companyRole AS text) IS NULL
                                      OR r.company_role = CAST(:companyRole AS text))))
@@ -90,10 +98,11 @@ public interface CompanyRepository extends JpaRepository<Company, Long> {
               AND (CAST(:country AS text) IS NULL OR upper(c.country) = upper(CAST(:country AS text)))
               AND (CAST(:publicCompany AS boolean) IS NULL
                    OR c.is_public = CAST(:publicCompany AS boolean))
-              AND (CAST(:itemId AS bigint) IS NULL
+              AND ((CAST(:itemId AS bigint) IS NULL AND CAST(:companyRole AS text) IS NULL)
                    OR EXISTS (SELECT 1 FROM company_item_role r
                               WHERE r.company_id = c.id
-                                AND r.item_id = CAST(:itemId AS bigint)
+                                AND (CAST(:itemId AS bigint) IS NULL
+                                     OR r.item_id = CAST(:itemId AS bigint))
                                 AND r.review_status IN (:roleReviewStatuses)
                                 AND (CAST(:companyRole AS text) IS NULL
                                      OR r.company_role = CAST(:companyRole AS text))))

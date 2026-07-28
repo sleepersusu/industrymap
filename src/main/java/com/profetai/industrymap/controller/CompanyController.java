@@ -59,8 +59,9 @@ public class CompanyController {
     @Operation(summary = "列出公司",
             description = "產業地圖從公司側進入的入口：呼叫端不需要事先知道任何代號。"
                     + "名稱關鍵字會正規化後同時比對公司名稱與別名（以 TSMC 查得到台積電），"
-                    + "並可依國別、公開發行狀態、供應的品類節點過濾，條件可併用。"
-                    + "已駁回的公司任何條件下都不外露。")
+                    + "並可依國別、公開發行狀態、供應的品類節點與供應角色過濾，條件可併用。"
+                    + "角色可單獨使用以跨零件彙總（例如列出所有代工組裝廠），與品類節點併用時"
+                    + "則收斂為「對該零件具有該角色」。已駁回的公司任何條件下都不外露。")
     @ApiResponses({
             @ApiResponse(responseCode = "200", description = "成功；無符合資料時回空清單與總筆數 0，而非 404"),
             @ApiResponse(responseCode = "400", description = "查詢條件驗證失敗"),

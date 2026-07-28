@@ -226,6 +226,114 @@ class CompanyListingNativeQueryTest extends AbstractPostgresIntegrationTest {
     }
 
     @Test
+    @DisplayName("只指定角色而未指定零件時，應回傳對任何零件具有該角色的公司")
+    void findCompanies_roleOnly_shouldReturnSuppliersAcrossAllItems() {
+        // Given：子丑各對不同零件具有代工組裝角色，寅只有製造角色
+        Item boardA = itemRepository.saveAndFlush(item("角色測試零件子"));
+        Item boardB = itemRepository.saveAndFlush(item("角色測試零件丑"));
+        Company assemblerA = verifiedCompany("角色公司子", "TW", true);
+        Company assemblerB = verifiedCompany("角色公司丑", "TW", true);
+        Company manufacturer = verifiedCompany("角色公司寅", "TW", true);
+        role(assemblerA, boardA, CompanyRole.ASSEMBLY, ReviewStatus.VERIFIED);
+        role(assemblerB, boardB, CompanyRole.ASSEMBLY, ReviewStatus.VERIFIED);
+        role(manufacturer, boardA, CompanyRole.MANUFACTURE, ReviewStatus.VERIFIED);
+
+        // When：不指定零件，只問「有哪些代工組裝廠」
+        List<Company> found = findByRole(pattern("角色公司"), CompanyRole.ASSEMBLY);
+
+        // Then：跨零件彙總，只做製造的那家不得入列
+        assertAll(
+                () -> assertEquals(List.of(assemblerA.getId(), assemblerB.getId()),
+                        ids(found).stream().sorted().toList()),
+                () -> assertFalse(ids(found).contains(manufacturer.getId())));
+    }
+
+    @Test
+    @DisplayName("只指定角色時總筆數應與內容一致")
+    void findCompanies_roleOnly_countShouldMatchContent() {
+        // 內容改了 count 沒改，清單會有資料卻顯示 0 筆
+        Item board = itemRepository.saveAndFlush(item("角色計數零件卯"));
+        Company assembler = verifiedCompany("角色計數公司卯", "TW", true);
+        verifiedCompany("角色計數公司辰", "TW", true);
+        role(assembler, board, CompanyRole.ASSEMBLY, ReviewStatus.VERIFIED);
+
+        String namePattern = pattern("角色計數公司");
+        List<Company> found = findByRole(namePattern, CompanyRole.ASSEMBLY);
+        long total = countByRole(namePattern, CompanyRole.ASSEMBLY);
+
+        assertAll(
+                () -> assertEquals(List.of(assembler.getId()), ids(found)),
+                () -> assertEquals(1L, total));
+    }
+
+    @Test
+    @DisplayName("只指定角色時，同一公司對多個零件具有該角色仍只出現一次")
+    void findCompanies_roleOnlyAcrossManyItems_shouldNotDuplicate() {
+        // Given：同一家公司對三個零件都有代工組裝角色
+        Company assembler = verifiedCompany("角色去重公司巳", "TW", true);
+        for (String name : List.of("去重零件一", "去重零件二", "去重零件三")) {
+            role(assembler, itemRepository.saveAndFlush(item(name)),
+                    CompanyRole.ASSEMBLY, ReviewStatus.VERIFIED);
+        }
+
+        String namePattern = pattern("角色去重公司");
+        List<Company> found = findByRole(namePattern, CompanyRole.ASSEMBLY);
+
+        assertAll(
+                () -> assertEquals(List.of(assembler.getId()), ids(found)),
+                () -> assertEquals(1L, countByRole(namePattern, CompanyRole.ASSEMBLY)));
+    }
+
+    @Test
+    @DisplayName("只指定角色時草稿角色不得讓公司出現在預設查詢中")
+    void findCompanies_roleOnlyWithDraftRole_shouldNotSurfaceByDefault() {
+        // 未指定零件時掃描範圍更大，草稿角色若被採計，「有哪些封測廠」會混入一批還沒審的猜測
+        Item board = itemRepository.saveAndFlush(item("角色草稿零件午"));
+        Company draftAssembler = verifiedCompany("角色草稿公司午", "TW", true);
+        role(draftAssembler, board, CompanyRole.ASSEMBLY, ReviewStatus.DRAFT);
+
+        List<Company> defaultScope = findByRole(pattern("角色草稿公司"), CompanyRole.ASSEMBLY);
+
+        assertFalse(ids(defaultScope).contains(draftAssembler.getId()));
+    }
+
+    @Test
+    @DisplayName("零件與角色併用時必須由同一筆供應角色滿足，不得由不同零件的不同角色分別命中")
+    void findCompanies_itemAndRoleMustBeSatisfiedBySameRow() {
+        // Given：未字公司對 A 零件有製造、對 B 零件有代工組裝——兩個條件各自都有人滿足，
+        // 但沒有任何一筆角色同時滿足「A 零件」與「代工組裝」
+        Item itemA = itemRepository.saveAndFlush(item("同列零件未A"));
+        Item itemB = itemRepository.saveAndFlush(item("同列零件未B"));
+        Company company = verifiedCompany("同列公司未", "TW", true);
+        role(company, itemA, CompanyRole.MANUFACTURE, ReviewStatus.VERIFIED);
+        role(company, itemB, CompanyRole.ASSEMBLY, ReviewStatus.VERIFIED);
+
+        // When：查「A 零件 + 代工組裝」
+        List<Company> found = companyRepository.findCompanies(
+                VERIFIED_ONLY, pattern("同列公司未"), null, null, itemA.getId(),
+                CompanyRole.ASSEMBLY.name(), VERIFIED_ONLY, EXPOSABLE, LIMIT, 0);
+
+        // Then：拆成兩個 EXISTS 的寫法會讓這家誤中
+        assertFalse(ids(found).contains(company.getId()));
+    }
+
+    @Test
+    @DisplayName("零件與角色皆不指定時不得因供應關係排除任何公司")
+    void findCompanies_neitherItemNorRole_shouldNotFilterBySupply() {
+        // 守衛的 AND / OR 優先序寫錯時，完全沒有供應角色的公司會被整個濾掉
+        Company withoutAnyRole = verifiedCompany("角色公司申無", "TW", true);
+        Company withRole = verifiedCompany("角色公司申有", "TW", true);
+        role(withRole, itemRepository.saveAndFlush(item("申字零件")),
+                CompanyRole.MANUFACTURE, ReviewStatus.VERIFIED);
+
+        List<Company> found = find(pattern("角色公司申"));
+
+        assertAll(
+                () -> assertTrue(ids(found).contains(withoutAnyRole.getId())),
+                () -> assertTrue(ids(found).contains(withRole.getId())));
+    }
+
+    @Test
     @DisplayName("依零件過濾時草稿角色不得讓公司出現在預設查詢中")
     void findCompanies_draftRole_shouldNotSurfaceCompanyByDefault() {
         // Given：公司本身已驗證，但它對該零件的供應角色只是草稿——
@@ -310,6 +418,16 @@ class CompanyListingNativeQueryTest extends AbstractPostgresIntegrationTest {
     private List<Company> find(String namePattern) {
         return companyRepository.findCompanies(
                 VERIFIED_ONLY, namePattern, null, null, null, null, VERIFIED_ONLY, EXPOSABLE, LIMIT, 0);
+    }
+
+    private List<Company> findByRole(String namePattern, CompanyRole companyRole) {
+        return companyRepository.findCompanies(VERIFIED_ONLY, namePattern, null, null, null,
+                companyRole.name(), VERIFIED_ONLY, EXPOSABLE, LIMIT, 0);
+    }
+
+    private long countByRole(String namePattern, CompanyRole companyRole) {
+        return companyRepository.countCompanies(VERIFIED_ONLY, namePattern, null, null, null,
+                companyRole.name(), VERIFIED_ONLY, EXPOSABLE);
     }
 
     private long countMatching(String namePattern) {

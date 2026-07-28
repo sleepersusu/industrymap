@@ -2,7 +2,6 @@ package com.profetai.industrymap.payloads.company;
 
 import com.profetai.industrymap.enums.CompanyRole;
 import io.swagger.v3.oas.annotations.media.Schema;
-import jakarta.validation.constraints.AssertTrue;
 import jakarta.validation.constraints.Max;
 import jakarta.validation.constraints.Min;
 import lombok.AllArgsConstructor;
@@ -47,26 +46,15 @@ public class CompanyQuery {
     @Schema(description = "是否為公開發行公司；不填表示不過濾", example = "true")
     private Boolean publicCompany;
 
-    @Schema(description = "品類節點 id，只回傳對該零件具有供應角色的公司；不填表示不過濾", example = "12")
+    @Schema(description = "品類節點 id，只回傳對該零件具有供應角色的公司；不填表示不限零件", example = "12")
     private Long itemId;
 
-    @Schema(description = "供應角色，僅在指定 itemId 時有意義；不填表示不限角色", example = "MANUFACTURE")
+    @Schema(description = "供應角色，可單獨使用（語意為「對任何零件具有該角色」，例如列出所有代工組裝廠）；"
+            + "與 itemId 併用時收斂為「對該零件具有該角色」；不填表示不限角色", example = "MANUFACTURE")
     private CompanyRole companyRole;
 
     @Builder.Default
     @Schema(description = "是否納入草稿資料；已駁回一律不外露", example = "false")
     private boolean includeDrafts = false;
 
-    /**
-     * 角色過濾只在指定零件的前提下才有意義——它收斂的是「對<b>這個零件</b>的角色」。
-     *
-     * <p>單獨給 companyRole 而不給 itemId 時必須回 400 而非默默忽略：忽略的話呼叫端會拿到
-     * 全部公司卻以為那是「所有代工組裝廠」，錯得無聲無息。若日後真要支援「對任何零件具有該角色」
-     * 的查詢，那是新的能力，應循 spec 擴充而不是讓這個參數悄悄改變語意。</p>
-     */
-    @AssertTrue(message = "companyRole 需搭配 itemId 使用")
-    @Schema(hidden = true)
-    public boolean isCompanyRoleScopedToItem() {
-        return companyRole == null || itemId != null;
-    }
 }

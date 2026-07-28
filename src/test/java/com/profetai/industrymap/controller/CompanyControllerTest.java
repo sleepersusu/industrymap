@@ -147,12 +147,20 @@ class CompanyControllerTest {
     }
 
     @Test
-    @DisplayName("列出公司時只給 companyRole 而未給 itemId 應回 400，不得靜默忽略")
-    void listCompanies_companyRoleWithoutItemId_shouldReturnBadRequest() throws Exception {
-        // 角色過濾只在 itemId 的子查詢內生效；未帶 itemId 時整個條件不套用，
-        // 呼叫端會拿到全部公司卻以為那是「所有代工組裝廠」
+    @DisplayName("列出公司時只給 companyRole 而未給 itemId 應正常查詢，itemId 維持未指定")
+    void listCompanies_companyRoleWithoutItemId_shouldQueryAcrossAllItems() throws Exception {
+        // 角色可獨立使用，語意為「對任何零件具有該角色」；此前這個組合回 400
+        when(companyService.findCompanies(any(CompanyQuery.class)))
+                .thenReturn(PageResponse.of(List.of(), 0, 20, 0L));
+
         mockMvc.perform(get("/api/companies").param("companyRole", "ASSEMBLY"))
-                .andExpect(status().isBadRequest());
+                .andExpect(status().isOk());
+
+        ArgumentCaptor<CompanyQuery> captor = ArgumentCaptor.forClass(CompanyQuery.class);
+        verify(companyService).findCompanies(captor.capture());
+        assertAll(
+                () -> assertEquals(CompanyRole.ASSEMBLY, captor.getValue().getCompanyRole()),
+                () -> assertNull(captor.getValue().getItemId()));
     }
 
     @Test
