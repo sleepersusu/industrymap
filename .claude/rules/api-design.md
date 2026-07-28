@@ -19,6 +19,7 @@
 | `/api/products` | 第一階段 | **終端成品列表**——產業地圖的進入點，呼叫端不需事先知道任何 id | `GET /api/products?name=&page=&size=` |
 | `/api/products/...` | 第一階段 | 產品 / BOM 拆解 | `/api/products/{id}/components` |
 | `/api/items/{id}` | 第一階段 | 品類節點的取得與**修正**（PUT 全量替換） | `PUT /api/items/{id}` |
+| `/api/companies` | 第一階段 | **公司列表**——從公司側進入地圖，可依名稱／別名、國別、公開發行狀態、供應零件過濾 | `GET /api/companies?name=&country=&itemId=&page=&size=` |
 | `/api/companies/...` | 第一階段 | 公司基本資料（含代號、對應零組件） | `/api/companies/{code}` |
 | `/api/supply-relations/...` | 第一階段 | 供應角色與市佔率寫入（公司以**代號**指定，不收內部 id） | `/api/supply-relations/roles` |
 | `/api/reviews` | 第一階段 | 審核狀態流轉，八張內容表共用單一端點 | `/api/reviews`、`/api/reviews/batch` |

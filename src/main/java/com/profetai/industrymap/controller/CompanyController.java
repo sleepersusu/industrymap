@@ -1,9 +1,11 @@
 package com.profetai.industrymap.controller;
 
 import com.profetai.industrymap.model.Company;
+import com.profetai.industrymap.payloads.PageResponse;
 import com.profetai.industrymap.payloads.ServerResponse;
 import com.profetai.industrymap.payloads.ServerResponses;
 import com.profetai.industrymap.payloads.company.CompanyIdentifierResponse;
+import com.profetai.industrymap.payloads.company.CompanyQuery;
 import com.profetai.industrymap.payloads.company.CompanyResponse;
 import com.profetai.industrymap.payloads.company.CreateCompanyAliasRequest;
 import com.profetai.industrymap.payloads.company.CreateCompanyRequest;
@@ -18,6 +20,7 @@ import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.ModelAttribute;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
@@ -50,6 +53,23 @@ public class CompanyController {
     public ResponseEntity<ServerResponse<CompanyResponse>> create(@Valid @RequestBody CreateCompanyRequest request) {
         Company company = companyService.create(request);
         return ServerResponses.created(CompanyResponse.from(company, List.of()));
+    }
+
+    @GetMapping
+    @Operation(summary = "列出公司",
+            description = "產業地圖從公司側進入的入口：呼叫端不需要事先知道任何代號。"
+                    + "名稱關鍵字會正規化後同時比對公司名稱與別名（以 TSMC 查得到台積電），"
+                    + "並可依國別、公開發行狀態、供應的品類節點過濾，條件可併用。"
+                    + "已駁回的公司任何條件下都不外露。")
+    @ApiResponses({
+            @ApiResponse(responseCode = "200", description = "成功；無符合資料時回空清單與總筆數 0，而非 404"),
+            @ApiResponse(responseCode = "400", description = "查詢條件驗證失敗"),
+            @ApiResponse(responseCode = "404", description = "指定的品類節點不存在")
+    })
+    public ResponseEntity<ServerResponse<PageResponse<CompanyResponse>>> list(
+            @Valid @ModelAttribute CompanyQuery query) {
+
+        return ServerResponses.ok(companyService.findCompanies(query));
     }
 
     @GetMapping("/{code}")

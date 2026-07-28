@@ -7,12 +7,16 @@ import com.profetai.industrymap.helper.ReviewScopes;
 import com.profetai.industrymap.model.Company;
 import com.profetai.industrymap.model.CompanyAlias;
 import com.profetai.industrymap.model.CompanyIdentifier;
+import com.profetai.industrymap.payloads.PageResponse;
+import com.profetai.industrymap.payloads.company.CompanyQuery;
+import com.profetai.industrymap.payloads.company.CompanyResponse;
 import com.profetai.industrymap.payloads.company.CreateCompanyAliasRequest;
 import com.profetai.industrymap.payloads.company.CreateCompanyRequest;
 import com.profetai.industrymap.payloads.company.CreateIdentifierRequest;
 import com.profetai.industrymap.repository.CompanyAliasRepository;
 import com.profetai.industrymap.repository.CompanyIdentifierRepository;
 import com.profetai.industrymap.repository.CompanyRepository;
+import com.profetai.industrymap.repository.ItemRepository;
 import com.profetai.industrymap.util.NameNormalizer;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.log4j.Log4j2;
@@ -25,6 +29,7 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
+import java.util.Set;
 import java.util.stream.Collectors;
 
 /**
@@ -41,6 +46,7 @@ public class CompanyService {
     private final CompanyRepository companyRepository;
     private final CompanyAliasRepository companyAliasRepository;
     private final CompanyIdentifierRepository companyIdentifierRepository;
+    private final ItemRepository itemRepository;
 
     /**
      * 建立公司。
@@ -244,6 +250,87 @@ public class CompanyService {
         return identifiers.stream()
                 .filter(identifier -> ReviewScopes.isExposable(identifier.getCompany().getReviewStatus()))
                 .toList();
+    }
+
+    /**
+     * 公司列表（design D1–D5）：分頁、名稱與別名關鍵字、國別、公開發行狀態、供應零件皆可併用。
+     *
+     * <p>指定的品類節點不存在時回 404 而非空清單：呼叫端傳了一個根本不存在的 id，
+     * 回空清單會讓它以為「這個零件沒有供應商」，與事實相反。條件都成立但查無資料時
+     * 才回空清單與總筆數 0。</p>
+     *
+     * @throws ServerException 指定的品類節點不存在（404）
+     */
+    @Transactional(readOnly = true)
+    public PageResponse<CompanyResponse> findCompanies(CompanyQuery query) {
+        if (query.getItemId() != null && !itemRepository.existsById(query.getItemId())) {
+            throw new ServerException("查無此品類節點：" + query.getItemId(), HttpStatus.NOT_FOUND);
+        }
+
+        Collection<String> reviewStatuses = ReviewScopes.visibleStatusNames(query.isIncludeDrafts());
+        String namePattern = toNamePattern(query.getName());
+        String country = blankToNull(query.getCountry());
+        String companyRole = query.getCompanyRole() == null ? null : query.getCompanyRole().name();
+
+        // 位移量以 long 計算：page 沒有上限，int 相乘會在大頁碼時溢位成負數，
+        // 送進 SQL 就變成負的 OFFSET，資料庫直接報錯而非回空頁
+        long offset = (long) query.getPage() * query.getSize();
+
+        long totalElements = companyRepository.countCompanies(reviewStatuses, namePattern, country,
+                query.getPublicCompany(), query.getItemId(), companyRole, reviewStatuses);
+        List<Company> companies = companyRepository.findCompanies(reviewStatuses, namePattern, country,
+                query.getPublicCompany(), query.getItemId(), companyRole, reviewStatuses,
+                query.getSize(), offset);
+
+        return PageResponse.of(toResponses(companies), query.getPage(), query.getSize(), totalElements);
+    }
+
+    /**
+     * 把本頁公司組成回應，識別碼一次撈齊後再分派。
+     *
+     * <p>已駁回的識別碼在這裡就濾掉，與單筆查詢的 {@link #findVisibleIdentifiers} 同一套規則——
+     * 同一家公司在列表與單筆回應裡的 {@code reference} 必須是同一個值，否則前端拿列表的識別去查單筆會 404。</p>
+     */
+    private List<CompanyResponse> toResponses(List<Company> companies) {
+        if (companies.isEmpty()) {
+            return List.of();
+        }
+        Set<Long> companyIds = companies.stream().map(Company::getId).collect(Collectors.toSet());
+        Map<Long, List<CompanyIdentifier>> identifiersByCompanyId =
+                companyIdentifierRepository.findByCompanyIdIn(companyIds).stream()
+                        .filter(identifier -> ReviewScopes.isExposable(identifier.getReviewStatus()))
+                        // 本頁公司已在同一交易內載入，關聯直接解析到它們本身而非代理
+                        .collect(Collectors.groupingBy(identifier -> identifier.getCompany().getId()));
+
+        return companies.stream()
+                .map(company -> CompanyResponse.from(company,
+                        identifiersByCompanyId.getOrDefault(company.getId(), List.of())))
+                .toList();
+    }
+
+    /**
+     * 空白字串一律視為「未指定」。
+     *
+     * <p>前端把所有查詢參數都帶上、值留空是常見行為（{@code ?country=}），照字面過濾會回 0 筆，
+     * 使用者看到的是「一家都沒有」而不是「這個條件沒有生效」，兩者差很多。</p>
+     */
+    private String blankToNull(String value) {
+        if (value == null || value.isBlank()) {
+            return null;
+        }
+        return value.strip();
+    }
+
+    /**
+     * 把名稱關鍵字轉成比對正規化名稱與別名的 LIKE 樣式；未指定關鍵字時不過濾。
+     *
+     * <p>比對正規化值而非顯示名稱，才能讓「ＴＳＭＣ」找得到別名為「tsmc」的台積電。
+     * 關鍵字正規化後為空（全是標點或空白）時視為不過濾，而不是 400——搜尋條件與必填名稱不同，
+     * 「剝完沒剩東西」的語意是「這個條件不構成過濾」。</p>
+     */
+    private String toNamePattern(String rawName) {
+        String normalized = NameNormalizer.normalizeOrEmpty(rawName);
+        return normalized.isEmpty() ? "%" : "%" + normalized + "%";
     }
 
     /** 以名稱或別名解析既有公司，供寫入前去重使用（design D9） */

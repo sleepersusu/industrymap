@@ -34,6 +34,12 @@ public interface CompanyIdentifierRepository extends JpaRepository<CompanyIdenti
 
     List<CompanyIdentifier> findByCompanyId(Long companyId);
 
+    /**
+     * 一次取多家公司的所有識別碼。公司列表要逐筆組出對外識別與識別碼清單，
+     * 逐家查會變成 N+1，因此提供批次版本。
+     */
+    List<CompanyIdentifier> findByCompanyIdIn(Collection<Long> companyIds);
+
     /** 取公司的主要識別碼：日後接股價時用來決定抓哪個市場 */
     Optional<CompanyIdentifier> findByCompanyIdAndIsPrimaryTrue(Long companyId);
 

@@ -8,6 +8,8 @@ import com.profetai.industrymap.model.Company;
 import com.profetai.industrymap.model.CompanyAlias;
 import com.profetai.industrymap.model.CompanyIdentifier;
 import com.profetai.industrymap.payloads.ProvenanceRequest;
+import com.profetai.industrymap.payloads.PageResponse;
+import com.profetai.industrymap.payloads.company.CompanyQuery;
 import com.profetai.industrymap.payloads.company.CompanyResponse;
 import com.profetai.industrymap.payloads.company.CreateCompanyAliasRequest;
 import com.profetai.industrymap.payloads.company.CreateCompanyRequest;
@@ -15,14 +17,17 @@ import com.profetai.industrymap.payloads.company.CreateIdentifierRequest;
 import com.profetai.industrymap.repository.CompanyAliasRepository;
 import com.profetai.industrymap.repository.CompanyIdentifierRepository;
 import com.profetai.industrymap.repository.CompanyRepository;
+import com.profetai.industrymap.repository.ItemRepository;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
+import org.mockito.ArgumentCaptor;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.http.HttpStatus;
 
+import java.util.Collection;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
@@ -32,9 +37,13 @@ import static org.junit.jupiter.api.Assertions.assertAll;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotEquals;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyInt;
+import static org.mockito.ArgumentMatchers.anyLong;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.lenient;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
@@ -51,6 +60,9 @@ class CompanyServiceTest {
 
     @Mock
     private CompanyIdentifierRepository companyIdentifierRepository;
+
+    @Mock
+    private ItemRepository itemRepository;
 
     @InjectMocks
     private CompanyService companyService;
@@ -645,6 +657,165 @@ class CompanyServiceTest {
         assertAll(
                 () -> assertTrue(companyService.referencesOf(List.of()).isEmpty()),
                 () -> verify(companyIdentifierRepository, never()).findByCompanyIdInAndIsPrimaryTrue(any()));
+    }
+
+
+    @Test
+    @DisplayName("列出公司未指定審核範圍時應只查已驗證公司")
+    void findCompanies_defaultScope_shouldQueryVerifiedOnly() {
+        // Given
+        givenListing(List.of(tsmc), 1L);
+
+        // When
+        PageResponse<CompanyResponse> page = companyService.findCompanies(CompanyQuery.builder().build());
+
+        // Then：送進查詢的審核範圍只能有 VERIFIED
+        ArgumentCaptor<Collection<String>> statuses = ArgumentCaptor.forClass(Collection.class);
+        verify(companyRepository).findCompanies(statuses.capture(), any(), any(), any(), any(), any(),
+                any(), anyInt(), anyLong());
+        assertAll(
+                () -> assertEquals(Set.of(ReviewStatus.VERIFIED.name()), Set.copyOf(statuses.getValue())),
+                () -> assertEquals(1, page.getContent().size()),
+                () -> assertEquals("台積電", page.getContent().get(0).getDisplayName()));
+    }
+
+    @Test
+    @DisplayName("列出公司指定納入草稿時應一併查詢草稿並標示各筆審核狀態")
+    void findCompanies_includeDrafts_shouldQueryDraftsAndExposeReviewStatus() {
+        Company draft = Company.builder().id(3L).normalizedName("草稿公司").displayName("草稿公司")
+                .reviewStatus(ReviewStatus.DRAFT).build();
+        givenListing(List.of(draft), 1L);
+
+        PageResponse<CompanyResponse> page =
+                companyService.findCompanies(CompanyQuery.builder().includeDrafts(true).build());
+
+        ArgumentCaptor<Collection<String>> statuses = ArgumentCaptor.forClass(Collection.class);
+        verify(companyRepository).findCompanies(statuses.capture(), any(), any(), any(), any(), any(),
+                any(), anyInt(), anyLong());
+        assertAll(
+                () -> assertEquals(
+                        Set.of(ReviewStatus.VERIFIED.name(), ReviewStatus.DRAFT.name()),
+                        Set.copyOf(statuses.getValue())),
+                () -> assertEquals(ReviewStatus.DRAFT, page.getContent().get(0).getReviewStatus()));
+    }
+
+    @Test
+    @DisplayName("列出公司納入草稿時查詢範圍仍不得包含已駁回")
+    void findCompanies_includeDrafts_shouldNeverQueryRejected() {
+        givenListing(List.of(), 0L);
+
+        companyService.findCompanies(CompanyQuery.builder().includeDrafts(true).build());
+
+        // 已駁回一律不外露：範圍由 ReviewScopes 決定，這裡確認沒有任何路徑把它加回來
+        ArgumentCaptor<Collection<String>> statuses = ArgumentCaptor.forClass(Collection.class);
+        verify(companyRepository).findCompanies(statuses.capture(), any(), any(), any(), any(), any(),
+                any(), anyInt(), anyLong());
+        assertFalse(statuses.getValue().contains(ReviewStatus.REJECTED.name()));
+    }
+
+    @Test
+    @DisplayName("列出公司指定不存在的品類節點時應拋出 404 ServerException")
+    void findCompanies_unknownItemId_shouldThrowNotFound() {
+        when(itemRepository.existsById(99L)).thenReturn(false);
+
+        ServerException ex = assertThrows(ServerException.class,
+                () -> companyService.findCompanies(CompanyQuery.builder().itemId(99L).build()));
+
+        assertAll(
+                () -> assertEquals(HttpStatus.NOT_FOUND, ex.getHttpStatus()),
+                () -> verify(companyRepository, never()).findCompanies(any(), any(), any(), any(), any(),
+                        any(), any(), anyInt(), anyLong()));
+    }
+
+    @Test
+    @DisplayName("列出公司無符合資料時應回空清單與總筆數 0，而非 404")
+    void findCompanies_noMatch_shouldReturnEmptyPage() {
+        givenListing(List.of(), 0L);
+
+        PageResponse<CompanyResponse> page =
+                companyService.findCompanies(CompanyQuery.builder().name("不存在").build());
+
+        assertAll(
+                () -> assertTrue(page.getContent().isEmpty()),
+                () -> assertEquals(0L, page.getTotalElements()),
+                () -> assertEquals(0, page.getTotalPages()));
+    }
+
+    @Test
+    @DisplayName("列出公司時各筆的對外識別應與單筆查詢一致，且不外露已駁回的識別碼")
+    void findCompanies_shouldBuildReferenceWithoutRejectedIdentifiers() {
+        // Given：一筆有效的主要識別碼，加一筆已被駁回的識別碼
+        CompanyIdentifier primary = CompanyIdentifier.builder().id(1L).company(tsmc)
+                .identifierType(IdentifierType.TWSE).identifierValue("2330").isPrimary(true)
+                .reviewStatus(ReviewStatus.VERIFIED).build();
+        CompanyIdentifier rejected = CompanyIdentifier.builder().id(2L).company(tsmc)
+                .identifierType(IdentifierType.SSE).identifierValue("9999")
+                .reviewStatus(ReviewStatus.REJECTED).build();
+        givenListing(List.of(tsmc), 1L);
+        when(companyIdentifierRepository.findByCompanyIdIn(Set.of(1L)))
+                .thenReturn(List.of(primary, rejected));
+
+        // When
+        CompanyResponse response = companyService.findCompanies(CompanyQuery.builder().build())
+                .getContent().get(0);
+
+        // Then
+        assertAll(
+                () -> assertEquals("TWSE:2330", response.getReference()),
+                () -> assertEquals(1, response.getIdentifiers().size()));
+    }
+
+    @Test
+    @DisplayName("列出公司時國別給空字串應視為不過濾，而非過濾空國別")
+    void findCompanies_blankCountry_shouldNotFilter() {
+        // Given：前端把所有查詢參數都帶上、值留空是常見行為（?country=），
+        // 若照字面過濾就會回 0 筆，使用者看到的是「一家都沒有」而不是「沒有這個條件」
+        givenListing(List.of(tsmc), 1L);
+
+        // When
+        companyService.findCompanies(CompanyQuery.builder().country("   ").build());
+
+        // Then：送進查詢的國別必須是 null
+        ArgumentCaptor<String> country = ArgumentCaptor.forClass(String.class);
+        verify(companyRepository).findCompanies(any(), any(), country.capture(), any(), any(), any(),
+                any(), anyInt(), anyLong());
+        assertNull(country.getValue());
+    }
+
+    @Test
+    @DisplayName("列出公司時國別前後空白應去除後比對")
+    void findCompanies_countryWithPadding_shouldBeTrimmed() {
+        givenListing(List.of(tsmc), 1L);
+
+        companyService.findCompanies(CompanyQuery.builder().country(" TW ").build());
+
+        ArgumentCaptor<String> country = ArgumentCaptor.forClass(String.class);
+        verify(companyRepository).findCompanies(any(), any(), country.capture(), any(), any(), any(),
+                any(), anyInt(), anyLong());
+        assertEquals("TW", country.getValue());
+    }
+
+    @Test
+    @DisplayName("列出公司時每頁筆數與位移應正確換算，且大頁碼不得溢位")
+    void findCompanies_largePage_shouldComputeOffsetWithoutOverflow() {
+        givenListing(List.of(), 0L);
+
+        companyService.findCompanies(CompanyQuery.builder().page(3_000_000).size(100).build());
+
+        // int 相乘會溢位成負數，送進 SQL 就是負的 OFFSET，資料庫直接報錯
+        ArgumentCaptor<Long> offset = ArgumentCaptor.forClass(Long.class);
+        verify(companyRepository).findCompanies(any(), any(), any(), any(), any(), any(), any(),
+                eq(100), offset.capture());
+        assertEquals(300_000_000L, offset.getValue());
+    }
+
+    /** 列表查詢的共用 stub：內容與總筆數由呼叫端指定，其餘條件不設限 */
+    private void givenListing(List<Company> companies, long totalElements) {
+        when(companyRepository.findCompanies(any(), any(), any(), any(), any(), any(), any(),
+                anyInt(), anyLong())).thenReturn(companies);
+        when(companyRepository.countCompanies(any(), any(), any(), any(), any(), any(), any()))
+                .thenReturn(totalElements);
+        lenient().when(companyIdentifierRepository.findByCompanyIdIn(any())).thenReturn(List.of());
     }
 
     private CreateIdentifierRequest identifierRequest(IdentifierType type, String value, boolean primary) {
