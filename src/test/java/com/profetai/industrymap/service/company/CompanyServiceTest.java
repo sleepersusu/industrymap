@@ -354,12 +354,101 @@ class CompanyServiceTest {
                 .thenReturn(Optional.of(CompanyIdentifier.builder().company(mistaken)
                         .identifierType(IdentifierType.SSE).identifierValue("2330")
                         .reviewStatus(ReviewStatus.REJECTED).build()));
-        when(companyIdentifierRepository.findByIdentifierValue("SSE:2330")).thenReturn(List.of());
         when(companyRepository.findByNormalizedName("sse2330")).thenReturn(Optional.empty());
 
         assertEquals(HttpStatus.NOT_FOUND,
                 assertThrows(ServerException.class,
                         () -> companyService.getByReference("SSE:2330")).getHttpStatus());
+    }
+
+    @Test
+    @DisplayName("限定形式命中已駁回識別碼時不得改以整串當代號值查詢")
+    void getByReference_qualifiedMatchRejected_shouldNotFallBackToLiteralValueLookup() {
+        // Given：台積電的 TWSE 2330 已被駁回，另一家公司在 OTHER 底下把「TWSE:2330」整串登記為代號值
+        // （值含冒號是本專案明文支援的用法）
+        Company unrelated = Company.builder().id(7L).normalizedName("無關公司").displayName("無關公司").build();
+        when(companyIdentifierRepository.findByIdentifierTypeAndIdentifierValue(IdentifierType.TWSE, "2330"))
+                .thenReturn(Optional.of(CompanyIdentifier.builder().company(tsmc)
+                        .identifierType(IdentifierType.TWSE).identifierValue("2330")
+                        .reviewStatus(ReviewStatus.REJECTED).build()));
+        lenient().when(companyIdentifierRepository.findByIdentifierValue("TWSE:2330")).thenReturn(List.of(
+                CompanyIdentifier.builder().company(unrelated).identifierType(IdentifierType.OTHER)
+                        .identifierValue("TWSE:2330").reviewStatus(ReviewStatus.VERIFIED).build()));
+        lenient().when(companyRepository.findByNormalizedName("twse2330")).thenReturn(Optional.empty());
+
+        // When / Then：呼叫端明確指名了交易所，該筆存在就以它為準；
+        // 已駁回即視為查無，不可靜默改回一家與 TWSE 2330 無關的公司
+        ServerException ex = assertThrows(ServerException.class,
+                () -> companyService.getByReference("TWSE:2330"));
+
+        assertAll(
+                () -> assertEquals(HttpStatus.NOT_FOUND, ex.getHttpStatus()),
+                () -> verify(companyRepository, never()).findById(7L));
+    }
+
+    @Test
+    @DisplayName("對外查詢時已駁回公司的識別碼不得造成歧義，寫入路徑則仍看得到")
+    void getVisibleByReference_collidingWithRejectedCompany_shouldResolveToExposableCompany() {
+        // Given：審核逐列套用，公司被駁回時其識別碼未必一併駁回——
+        // 因此「公司已駁回、識別碼仍有效」是可達狀態
+        Company mistaken = Company.builder().id(8L).normalizedName("誤建公司").displayName("誤建公司")
+                .reviewStatus(ReviewStatus.REJECTED).build();
+        when(companyIdentifierRepository.findByIdentifierValue("2330")).thenReturn(List.of(
+                CompanyIdentifier.builder().company(tsmc).identifierType(IdentifierType.TWSE)
+                        .identifierValue("2330").reviewStatus(ReviewStatus.VERIFIED).build(),
+                CompanyIdentifier.builder().company(mistaken).identifierType(IdentifierType.SSE)
+                        .identifierValue("2330").reviewStatus(ReviewStatus.VERIFIED).build()));
+        when(companyRepository.findAllById(List.of(1L, 8L))).thenReturn(List.of(tsmc, mistaken));
+        when(companyRepository.findById(1L)).thenReturn(Optional.of(tsmc));
+
+        // When / Then：對外只有一家公司存在，不構成歧義
+        assertEquals(tsmc, companyService.getVisibleByReference("2330"));
+    }
+
+    @Test
+    @DisplayName("寫入路徑仍須看見已駁回公司，否則駁回的公司無法被改回草稿")
+    void getByReference_collidingWithRejectedCompany_shouldStillReportConflict() {
+        // 審核端點以 companyCode 定位目標，若寫入路徑也濾掉已駁回公司，就再也無法把它改回來
+        Company mistaken = Company.builder().id(8L).normalizedName("誤建公司").displayName("誤建公司")
+                .reviewStatus(ReviewStatus.REJECTED).build();
+        when(companyIdentifierRepository.findByIdentifierValue("2330")).thenReturn(List.of(
+                CompanyIdentifier.builder().company(tsmc).identifierType(IdentifierType.TWSE)
+                        .identifierValue("2330").reviewStatus(ReviewStatus.VERIFIED).build(),
+                CompanyIdentifier.builder().company(mistaken).identifierType(IdentifierType.SSE)
+                        .identifierValue("2330").reviewStatus(ReviewStatus.VERIFIED).build()));
+
+        ServerException ex = assertThrows(ServerException.class, () -> companyService.getByReference("2330"));
+
+        assertAll(
+                () -> assertEquals(HttpStatus.CONFLICT, ex.getHttpStatus()),
+                () -> assertTrue(ex.getMessage().contains("SSE:2330")),
+                () -> verify(companyRepository, never()).findAllById(any()));
+    }
+
+    @Test
+    @DisplayName("衝突訊息的候選清單不得列入已駁回的識別碼")
+    void getByReference_ambiguousWithRejectedThird_shouldListOnlyExposableCandidates() {
+        // Given：兩家可外露的公司撞號（真歧義），外加第三筆已駁回的同值識別碼
+        Company lenovo = Company.builder().id(5L).normalizedName("聯想").displayName("聯想").build();
+        Company sseListed = Company.builder().id(6L).normalizedName("某滬市公司").displayName("某滬市公司").build();
+        Company mistaken = Company.builder().id(8L).normalizedName("誤建公司").displayName("誤建公司").build();
+        when(companyIdentifierRepository.findByIdentifierValue("0992")).thenReturn(List.of(
+                CompanyIdentifier.builder().company(lenovo).identifierType(IdentifierType.HKEX)
+                        .identifierValue("0992").reviewStatus(ReviewStatus.VERIFIED).build(),
+                CompanyIdentifier.builder().company(sseListed).identifierType(IdentifierType.SSE)
+                        .identifierValue("0992").reviewStatus(ReviewStatus.VERIFIED).build(),
+                CompanyIdentifier.builder().company(mistaken).identifierType(IdentifierType.SZSE)
+                        .identifierValue("0992").reviewStatus(ReviewStatus.REJECTED).build()));
+
+        // When
+        ServerException ex = assertThrows(ServerException.class, () -> companyService.getByReference("0992"));
+
+        // Then：照訊息重送必須成功，已駁回的候選重送會查無，因此不得列出
+        assertAll(
+                () -> assertEquals(HttpStatus.CONFLICT, ex.getHttpStatus()),
+                () -> assertTrue(ex.getMessage().contains("HKEX:0992")),
+                () -> assertTrue(ex.getMessage().contains("SSE:0992")),
+                () -> assertFalse(ex.getMessage().contains("SZSE:0992")));
     }
 
     @Test

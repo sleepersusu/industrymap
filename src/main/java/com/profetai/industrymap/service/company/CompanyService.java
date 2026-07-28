@@ -25,6 +25,7 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
+import java.util.Set;
 import java.util.stream.Collectors;
 
 /**
@@ -150,7 +151,7 @@ public class CompanyService {
      */
     @Transactional(readOnly = true)
     public Company getByIdentifierValue(String identifierValue) {
-        return resolveByIdentifier(identifierValue)
+        return resolveByIdentifier(identifierValue, false)
                 .orElseThrow(() -> new ServerException("查無此公司代號：" + identifierValue, HttpStatus.NOT_FOUND));
     }
 
@@ -164,9 +165,13 @@ public class CompanyService {
      */
     @Transactional(readOnly = true)
     public Company getByReference(String reference) {
-        return resolveByIdentifier(reference)
-                .orElseGet(() -> companyRepository.findByNormalizedName(NameNormalizer.normalize(reference))
-                        .orElseThrow(() -> new ServerException("查無此公司：" + reference, HttpStatus.NOT_FOUND)));
+        return resolveByIdentifier(reference, false)
+                .orElseGet(() -> byNormalizedName(reference));
+    }
+
+    private Company byNormalizedName(String reference) {
+        return companyRepository.findByNormalizedName(NameNormalizer.normalize(reference))
+                .orElseThrow(() -> new ServerException("查無此公司：" + reference, HttpStatus.NOT_FOUND));
     }
 
     /**
@@ -182,30 +187,37 @@ public class CompanyService {
      * <p>已駁回的識別碼一律不納入（design D8）：它不外露於任何回應，因此既不該是可用的定位手段，
      * 更不該讓一筆被駁回的誤建資料撞掉合法公司的裸代號查詢。</p>
      *
-     * <p>限定形式查無時仍往下試裸代號：識別碼值本身有可能長得像限定形式
-     * （{@code OTHER} 底下自訂的值），此時整個字串才是它的代號值。</p>
+     * <p>{@code exposableCompaniesOnly} 讓歧義的判定範圍跟著呼叫端走：對外查詢看不到已駁回的公司，
+     * 那些公司就不該讓它的請求變成歧義，也不該出現在候選清單裡——列出去的候選重送必須會成功。
+     * 寫入流程則相反，必須看得見已駁回的公司，否則審核端點無法以代號把它改回草稿。</p>
+     *
+     * <p>限定形式<b>查無該筆</b>時才往下試裸代號：識別碼值本身有可能長得像限定形式
+     * （{@code OTHER} 底下自訂的值），此時整個字串才是它的代號值。但該筆存在卻已駁回時
+     * 一律停在這裡回空——呼叫端已明確指名交易所，再往下走會命中某個字面值恰好長得像限定形式的
+     * 別家識別碼，而且是靜默的。</p>
      *
      * @throws ServerException 裸代號對應多家公司（409）
      */
-    private Optional<Company> resolveByIdentifier(String reference) {
-        Optional<Company> byUniqueKey = CompanyReferences.parse(reference)
+    private Optional<Company> resolveByIdentifier(String reference, boolean exposableCompaniesOnly) {
+        Optional<CompanyIdentifier> qualifiedMatch = CompanyReferences.parse(reference)
                 .flatMap(qualified -> companyIdentifierRepository.findByIdentifierTypeAndIdentifierValue(
-                        qualified.getIdentifierType(), qualified.getIdentifierValue()))
-                .filter(identifier -> ReviewScopes.isExposable(identifier.getReviewStatus()))
-                .map(this::initialized);
-        if (byUniqueKey.isPresent()) {
-            return byUniqueKey;
+                        qualified.getIdentifierType(), qualified.getIdentifierValue()));
+        if (qualifiedMatch.isPresent()) {
+            return qualifiedMatch
+                    .filter(identifier -> ReviewScopes.isExposable(identifier.getReviewStatus()))
+                    .map(this::initialized);
         }
 
         List<CompanyIdentifier> identifiers = companyIdentifierRepository.findByIdentifierValue(reference).stream()
                 .filter(identifier -> ReviewScopes.isExposable(identifier.getReviewStatus()))
                 .toList();
-        // company 是 LAZY 關聯，但只讀主鍵不會觸發初始化，這一步是安全的
-        long distinctCompanies = identifiers.stream()
-                .map(identifier -> identifier.getCompany().getId())
-                .distinct()
-                .count();
-        if (distinctCompanies > 1) {
+        if (exposableCompaniesOnly && distinctCompanyIds(identifiers).size() > 1) {
+            // 只在真的可能歧義時才多這一次查詢；單一命中時公司的審核狀態由呼叫端自己把關
+            identifiers = withoutRejectedCompanies(identifiers);
+        }
+
+        List<Long> companyIds = distinctCompanyIds(identifiers);
+        if (companyIds.size() > 1) {
             String candidates = identifiers.stream()
                     .map(CompanyReferences::qualify)
                     .sorted()
@@ -214,6 +226,30 @@ public class CompanyService {
                     HttpStatus.CONFLICT);
         }
         return identifiers.stream().findFirst().map(this::initialized);
+    }
+
+    /** company 是 LAZY 關聯，但只讀主鍵不需要欄位值，這一步不會拋 LazyInitializationException */
+    private List<Long> distinctCompanyIds(Collection<CompanyIdentifier> identifiers) {
+        return identifiers.stream()
+                .map(identifier -> identifier.getCompany().getId())
+                .distinct()
+                .toList();
+    }
+
+    /**
+     * 濾掉所屬公司已被駁回的識別碼。
+     *
+     * <p>審核是逐列套用的，公司被駁回時它的識別碼未必一併駁回，因此只看識別碼的狀態擋不住
+     * 「對外根本不存在的公司」被算進歧義，也擋不住它被寫進 409 的候選清單。</p>
+     */
+    private List<CompanyIdentifier> withoutRejectedCompanies(List<CompanyIdentifier> identifiers) {
+        Set<Long> rejectedCompanyIds = companyRepository.findAllById(distinctCompanyIds(identifiers)).stream()
+                .filter(company -> !ReviewScopes.isExposable(company.getReviewStatus()))
+                .map(Company::getId)
+                .collect(Collectors.toSet());
+        return identifiers.stream()
+                .filter(identifier -> !rejectedCompanyIds.contains(identifier.getCompany().getId()))
+                .toList();
     }
 
     /**
@@ -260,7 +296,8 @@ public class CompanyService {
      */
     @Transactional(readOnly = true)
     public Company getVisibleByReference(String reference) {
-        Company company = getByReference(reference);
+        Company company = resolveByIdentifier(reference, true)
+                .orElseGet(() -> byNormalizedName(reference));
         if (!ReviewScopes.isExposable(company.getReviewStatus())) {
             throw new ServerException("查無此公司：" + reference, HttpStatus.NOT_FOUND);
         }
