@@ -42,7 +42,8 @@
       `page=-1` → 400；查無資料 → 200 空清單與總筆數 0；`publicCompany=false` → 2 筆未上市公司
       （對外識別退回正規化名稱 sram／toshiba，符合 design D4）
 - [x] 5.4 `fix-cross-exchange-identifier-lookup` 已合入並歸檔（含後續的 @EntityGraph 重構 9012e6d），本次改動建立其上，全量測試綠
-- [ ] 5.5 以 fresh-context diff review 審查，只修正確性問題
+- [x] 5.5 以 fresh-context diff review 審查，只修正確性問題：2 筆 findings 均先以失敗測試證實再修（273d9e5）——
+      別名子查詢漏過濾 `review_status`（已駁回別名仍是有效搜尋鍵）、`companyRole` 未搭配 `itemId` 時被靜默忽略
 - [x] 5.6 更新 `.claude/rules/api-design.md` 的 base path 表，補上公司列表為第一階段端點
 - [x] 5.7 更新 `docs/data-loading-playbook.md` 第八節 G1（公司側已補齊，可簡化為僅剩節點清單需求）
 - [x] 5.8 更新 `docs/CHANGELOG.md` 記錄公司列表 API 上線
