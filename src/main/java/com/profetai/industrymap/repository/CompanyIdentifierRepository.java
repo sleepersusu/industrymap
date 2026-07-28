@@ -15,9 +15,10 @@ public interface CompanyIdentifierRepository extends JpaRepository<CompanyIdenti
     boolean existsByIdentifierTypeAndIdentifierValue(IdentifierType identifierType, String identifierValue);
 
     /**
-     * 對外 API 以代號查公司時多半不會指定類型（`/api/companies/2330`），
-     * 因此提供只以代號值查詢的版本；同一代號值理論上可跨類型重複（TWSE 2330 與某統編相同），
-     * 故回傳清單由 service 判斷。
+     * 只以代號值查詢，供呼叫端沿用裸代號（`/api/companies/2330`）時使用。
+     * 同一代號值會跨類型重複（不同交易所的號碼空間完全重疊），故回傳清單；
+     * 命中多筆時 service 報衝突而非任選一筆，唯一定位請改用
+     * {@link #findByIdentifierTypeAndIdentifierValue}。
      */
     List<CompanyIdentifier> findByIdentifierValue(String identifierValue);
 

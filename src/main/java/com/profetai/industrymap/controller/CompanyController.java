@@ -29,7 +29,8 @@ import java.util.List;
 /**
  * 公司主檔、識別碼與別名。
  *
- * <p>路徑識別用公司代號，未上市公司則用正規化名稱——兩者都不是內部自增主鍵。</p>
+ * <p>路徑識別用公司代號的交易所限定形式（{@code TWSE:2330}），未上市公司則用正規化名稱——
+ * 兩者都不是內部自增主鍵。代號只在發行它的交易所內唯一，因此路徑上必須帶類型。</p>
  */
 @RestController
 @RequestMapping("/api/companies")
@@ -52,13 +53,17 @@ public class CompanyController {
     }
 
     @GetMapping("/{code}")
-    @Operation(summary = "依代號取得公司", description = "回傳公司資料與其所有識別碼；未上市公司以正規化名稱作為代號位置的識別。")
+    @Operation(summary = "依代號取得公司",
+            description = "回傳公司資料與其所有識別碼。代號用交易所限定形式 `<類型>:<代號值>`，"
+                    + "未上市公司以正規化名稱作為代號位置的識別。裸代號仍可查，但同代號值跨交易所撞號時回 409。")
     @ApiResponses({
             @ApiResponse(responseCode = "200", description = "成功"),
-            @ApiResponse(responseCode = "404", description = "查無此代號")
+            @ApiResponse(responseCode = "404", description = "查無此代號"),
+            @ApiResponse(responseCode = "409", description = "裸代號對應多家公司，須改用限定形式")
     })
     public ResponseEntity<ServerResponse<CompanyResponse>> get(
-            @Parameter(description = "公司代號，例：2330；未上市公司用正規化名稱") @PathVariable String code) {
+            @Parameter(description = "公司對外識別，例：TWSE:2330；未上市公司用正規化名稱",
+                    example = "TWSE:2330") @PathVariable String code) {
 
         Company company = companyService.getVisibleByReference(code);
         return ServerResponses.ok(
@@ -70,10 +75,13 @@ public class CompanyController {
     @ApiResponses({
             @ApiResponse(responseCode = "201", description = "建立成功"),
             @ApiResponse(responseCode = "404", description = "查無此公司"),
-            @ApiResponse(responseCode = "409", description = "識別碼已被登記或該公司已有主要識別碼")
+            @ApiResponse(responseCode = "409",
+                    description = "識別碼已被登記、該公司已有主要識別碼，或裸代號對應多家公司")
     })
     public ResponseEntity<ServerResponse<CompanyIdentifierResponse>> addIdentifier(
-            @PathVariable String code, @Valid @RequestBody CreateIdentifierRequest request) {
+            @Parameter(description = "公司對外識別，例：TWSE:2330；未上市公司用正規化名稱",
+                    example = "TWSE:2330") @PathVariable String code,
+            @Valid @RequestBody CreateIdentifierRequest request) {
 
         Company company = companyService.getByReference(code);
         return ServerResponses.created(
@@ -85,10 +93,13 @@ public class CompanyController {
     @ApiResponses({
             @ApiResponse(responseCode = "201", description = "建立成功"),
             @ApiResponse(responseCode = "404", description = "查無此公司"),
-            @ApiResponse(responseCode = "409", description = "別名與其他公司名稱或既有別名衝突")
+            @ApiResponse(responseCode = "409",
+                    description = "別名與其他公司名稱或既有別名衝突，或裸代號對應多家公司")
     })
     public ResponseEntity<ServerResponse<String>> addAlias(
-            @PathVariable String code, @Valid @RequestBody CreateCompanyAliasRequest request) {
+            @Parameter(description = "公司對外識別，例：TWSE:2330；未上市公司用正規化名稱",
+                    example = "TWSE:2330") @PathVariable String code,
+            @Valid @RequestBody CreateCompanyAliasRequest request) {
 
         Company company = companyService.getByReference(code);
         return ServerResponses.created(companyService.addAlias(company.getId(), request).getNormalizedAlias());

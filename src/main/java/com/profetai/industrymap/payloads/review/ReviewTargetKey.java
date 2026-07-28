@@ -40,8 +40,8 @@ public class ReviewTargetKey {
     @Schema(description = "名稱或別名，系統會正規化後比對。用於 ITEM、ITEM_ALIAS、COMPANY_ALIAS", example = "變速器")
     private String name;
 
-    @Schema(description = "公司對外識別（主要代號，未上市公司為正規化名稱）。"
-            + "用於 COMPANY、COMPANY_ITEM_ROLE、MARKET_SHARE", example = "2330")
+    @Schema(description = "公司對外識別（主要代號的交易所限定形式 <類型>:<代號值>，未上市公司為正規化名稱）。"
+            + "用於 COMPANY、COMPANY_ITEM_ROLE、MARKET_SHARE", example = "TWSE:2330")
     private String companyCode;
 
     @Schema(description = "上層節點 id。用於 ITEM_COMPOSITION")

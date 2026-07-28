@@ -42,7 +42,7 @@ import static org.mockito.Mockito.when;
 @ExtendWith(MockitoExtension.class)
 class NaturalKeyResolverTest {
 
-    private static final String TSMC_CODE = "2330";
+    private static final String TSMC_CODE = "TWSE:2330";
 
     @Mock
     private ItemRepository itemRepository;

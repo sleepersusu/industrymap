@@ -137,6 +137,24 @@ class CoreSchemaConstraintTest extends AbstractPostgresIntegrationTest {
     }
 
     @Test
+    @DisplayName("跨交易所撞號時以（類型, 代號值）查詢應只命中該交易所那一筆")
+    void findByTypeAndValue_collidingCodeAcrossExchanges_shouldMatchExactlyOne() {
+        // Given：兩家公司在不同交易所持有相同代號值——裸代號查詢會回兩筆
+        Company lenovo = companyRepository.saveAndFlush(company("聯想", "聯想"));
+        Company sseListed = companyRepository.saveAndFlush(company("某滬市公司", "某滬市公司"));
+        companyIdentifierRepository.saveAndFlush(identifier(lenovo, IdentifierType.HKEX, "0992", true));
+        companyIdentifierRepository.saveAndFlush(identifier(sseListed, IdentifierType.SSE, "0992", true));
+
+        // When：改以唯一鍵（類型, 代號值）定位
+        CompanyIdentifier found = companyIdentifierRepository
+                .findByIdentifierTypeAndIdentifierValue(IdentifierType.HKEX, FIXTURE_PREFIX + "0992")
+                .orElseThrow();
+
+        // Then：限定形式的解析建立在這個唯一鍵上，至多一筆才成立
+        assertEquals(lenovo.getId(), found.getCompany().getId());
+    }
+
+    @Test
     @DisplayName("同一公司第二筆主要識別碼應被 partial unique index 擋下")
     void saveIdentifier_secondPrimaryForSameCompany_shouldViolateUniqueIndex() {
         Company tsmc = companyRepository.saveAndFlush(company("台積電", "台積電"));

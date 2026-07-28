@@ -144,16 +144,14 @@ public class CompanyService {
 
     /**
      * 依代號查公司——對外 API 以代號為路徑識別，不曝露內部自增主鍵。
+     * 接受限定形式（{@code TWSE:2330}）與裸代號值兩種寫法，規則同 {@link #getByReference}。
      *
-     * @throws ServerException 查無此代號（404）
+     * @throws ServerException 查無此代號（404）、裸代號對應多家公司（409）
      */
     @Transactional(readOnly = true)
     public Company getByIdentifierValue(String identifierValue) {
-        List<CompanyIdentifier> identifiers = companyIdentifierRepository.findByIdentifierValue(identifierValue);
-        if (identifiers.isEmpty()) {
-            throw new ServerException("查無此公司代號：" + identifierValue, HttpStatus.NOT_FOUND);
-        }
-        return initialized(identifiers.get(0));
+        return resolveByIdentifier(identifierValue)
+                .orElseThrow(() -> new ServerException("查無此公司代號：" + identifierValue, HttpStatus.NOT_FOUND));
     }
 
     /**
@@ -162,16 +160,60 @@ public class CompanyService {
      * <p>對外 API 一律不曝露內部自增主鍵，但未上市公司沒有任何代號，
      * 因此以正規化名稱作為它們的路徑識別。</p>
      *
-     * @throws ServerException 代號與名稱都查無（404）
+     * @throws ServerException 代號與名稱都查無（404）、裸代號對應多家公司（409）
      */
     @Transactional(readOnly = true)
     public Company getByReference(String reference) {
-        List<CompanyIdentifier> identifiers = companyIdentifierRepository.findByIdentifierValue(reference);
-        if (!identifiers.isEmpty()) {
-            return initialized(identifiers.get(0));
+        return resolveByIdentifier(reference)
+                .orElseGet(() -> companyRepository.findByNormalizedName(NameNormalizer.normalize(reference))
+                        .orElseThrow(() -> new ServerException("查無此公司：" + reference, HttpStatus.NOT_FOUND)));
+    }
+
+    /**
+     * 以代號定位公司，查無則回空（交給呼叫端決定退回名稱查詢或報 404）。
+     *
+     * <p>限定形式走 {@code (類型, 代號值)} 唯一鍵，至多命中一筆。裸代號沿用值查詢，
+     * 但<b>指向多家公司時不得任選一筆</b>——代號只在發行它的交易所內唯一，
+     * 取 {@code get(0)} 等於讓資料庫回傳順序決定是哪一家公司，錯得無聲無息。</p>
+     *
+     * <p>歧義以<b>公司家數</b>而非識別碼筆數判定：同一家公司可在兩個交易所持有相同代號值
+     * （上櫃轉上市會保留原代號），那不是歧義，回傳同一家公司即可。</p>
+     *
+     * <p>已駁回的識別碼一律不納入（design D8）：它不外露於任何回應，因此既不該是可用的定位手段，
+     * 更不該讓一筆被駁回的誤建資料撞掉合法公司的裸代號查詢。</p>
+     *
+     * <p>限定形式查無時仍往下試裸代號：識別碼值本身有可能長得像限定形式
+     * （{@code OTHER} 底下自訂的值），此時整個字串才是它的代號值。</p>
+     *
+     * @throws ServerException 裸代號對應多家公司（409）
+     */
+    private Optional<Company> resolveByIdentifier(String reference) {
+        Optional<Company> byUniqueKey = CompanyReferences.parse(reference)
+                .flatMap(qualified -> companyIdentifierRepository.findByIdentifierTypeAndIdentifierValue(
+                        qualified.getIdentifierType(), qualified.getIdentifierValue()))
+                .filter(identifier -> ReviewScopes.isExposable(identifier.getReviewStatus()))
+                .map(this::initialized);
+        if (byUniqueKey.isPresent()) {
+            return byUniqueKey;
         }
-        return companyRepository.findByNormalizedName(NameNormalizer.normalize(reference))
-                .orElseThrow(() -> new ServerException("查無此公司：" + reference, HttpStatus.NOT_FOUND));
+
+        List<CompanyIdentifier> identifiers = companyIdentifierRepository.findByIdentifierValue(reference).stream()
+                .filter(identifier -> ReviewScopes.isExposable(identifier.getReviewStatus()))
+                .toList();
+        // company 是 LAZY 關聯，但只讀主鍵不會觸發初始化，這一步是安全的
+        long distinctCompanies = identifiers.stream()
+                .map(identifier -> identifier.getCompany().getId())
+                .distinct()
+                .count();
+        if (distinctCompanies > 1) {
+            String candidates = identifiers.stream()
+                    .map(CompanyReferences::qualify)
+                    .sorted()
+                    .collect(Collectors.joining("、"));
+            throw new ServerException("代號 " + reference + " 對應多家公司，請改用限定形式指定：" + candidates,
+                    HttpStatus.CONFLICT);
+        }
+        return identifiers.stream().findFirst().map(this::initialized);
     }
 
     /**
@@ -226,7 +268,7 @@ public class CompanyService {
     }
 
     /**
-     * 取得單一公司的對外識別（design D4）：優先主要識別碼的代號，無識別碼才退回正規化名稱。
+     * 取得單一公司的對外識別（design D4）：優先主要識別碼的限定形式，無識別碼才退回正規化名稱。
      * 規則本身寫在 {@link CompanyReferences}，本方法只負責把識別碼查出來。
      */
     @Transactional(readOnly = true)

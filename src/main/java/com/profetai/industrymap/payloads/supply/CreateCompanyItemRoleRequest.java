@@ -19,8 +19,9 @@ import lombok.NoArgsConstructor;
 public class CreateCompanyItemRoleRequest {
 
     @NotBlank(message = "公司代號為必填")
-    @Schema(description = "公司代號；未上市公司用正規化名稱，與建立公司回應的 reference 一致",
-            example = "5306", requiredMode = Schema.RequiredMode.REQUIRED)
+    @Schema(description = "公司對外識別，建議用交易所限定形式 <類型>:<代號值>；未上市公司用正規化名稱。"
+            + "與公司回應的 reference 一致。裸代號仍可用，但同代號值跨交易所撞號時回 409",
+            example = "TWSE:5306", requiredMode = Schema.RequiredMode.REQUIRED)
     private String companyCode;
 
     @NotNull(message = "零件為必填")

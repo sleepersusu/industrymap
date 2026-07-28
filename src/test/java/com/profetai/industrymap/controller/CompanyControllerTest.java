@@ -5,8 +5,10 @@ import com.profetai.industrymap.enums.IdentifierType;
 import com.profetai.industrymap.enums.SourceType;
 import com.profetai.industrymap.exceptions.ServerException;
 import com.profetai.industrymap.model.Company;
+import com.profetai.industrymap.model.CompanyAlias;
 import com.profetai.industrymap.model.CompanyIdentifier;
 import com.profetai.industrymap.payloads.ProvenanceRequest;
+import com.profetai.industrymap.payloads.company.CreateCompanyAliasRequest;
 import com.profetai.industrymap.payloads.company.CreateCompanyRequest;
 import com.profetai.industrymap.payloads.company.CreateIdentifierRequest;
 import com.profetai.industrymap.service.company.CompanyService;
@@ -47,8 +49,8 @@ class CompanyControllerTest {
             .country("TW").isPublic(true).sourceType(SourceType.MANUAL).build();
 
     @Test
-    @DisplayName("依代號查詢公司應回傳公司資料與所有識別碼")
-    void getCompany_byCode_shouldReturnCompanyWithIdentifiers() throws Exception {
+    @DisplayName("以裸代號查詢公司應回傳公司資料與所有識別碼，回應的對外識別則為限定形式")
+    void getCompany_byBareCode_shouldReturnCompanyWithIdentifiers() throws Exception {
         when(companyService.getVisibleByReference("2330")).thenReturn(tsmc);
         when(companyService.findVisibleIdentifiers(1L)).thenReturn(List.of(
                 CompanyIdentifier.builder().company(tsmc).identifierType(IdentifierType.TWSE)
@@ -59,8 +61,24 @@ class CompanyControllerTest {
         mockMvc.perform(get("/api/companies/2330"))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.data.displayName").value("台積電"))
-                .andExpect(jsonPath("$.data.reference").value("2330"))
+                .andExpect(jsonPath("$.data.reference").value("TWSE:2330"))
                 .andExpect(jsonPath("$.data.identifiers.length()").value(2));
+    }
+
+    @Test
+    @DisplayName("以限定形式代號查詢時路徑變數應原封不動綁定，含冒號在內")
+    void getCompany_qualifiedReference_shouldBindPathVariableIncludingColon() throws Exception {
+        // Given：冒號在 path segment 中合法（RFC 3986 pchar），但 Spring 是否原封綁定必須實測
+        when(companyService.getVisibleByReference("TWSE:2330")).thenReturn(tsmc);
+        when(companyService.findVisibleIdentifiers(1L)).thenReturn(List.of(
+                CompanyIdentifier.builder().company(tsmc).identifierType(IdentifierType.TWSE)
+                        .identifierValue("2330").isPrimary(true).build()));
+
+        // When / Then：走到 service 的字串必須是完整的 TWSE:2330，回應的對外識別亦同
+        mockMvc.perform(get("/api/companies/TWSE:2330"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.displayName").value("台積電"))
+                .andExpect(jsonPath("$.data.reference").value("TWSE:2330"));
     }
 
     @Test
@@ -127,5 +145,45 @@ class CompanyControllerTest {
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(objectMapper.writeValueAsString(request)))
                 .andExpect(status().isConflict());
+    }
+
+    @Test
+    @DisplayName("以限定形式登記識別碼時子路徑仍應正確綁定")
+    void addIdentifier_qualifiedReference_shouldBindPathVariable() throws Exception {
+        when(companyService.getByReference("TWSE:2330")).thenReturn(tsmc);
+        when(companyService.addIdentifier(eq(1L), any(CreateIdentifierRequest.class)))
+                .thenReturn(CompanyIdentifier.builder().company(tsmc).identifierType(IdentifierType.NYSE)
+                        .identifierValue("TSM").isPrimary(false).build());
+
+        CreateIdentifierRequest request = CreateIdentifierRequest.builder()
+                .identifierType(IdentifierType.NYSE)
+                .identifierValue("TSM")
+                .provenance(ProvenanceRequest.builder().sourceType(SourceType.MANUAL).build())
+                .build();
+
+        mockMvc.perform(post("/api/companies/TWSE:2330/identifiers")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(request)))
+                .andExpect(status().isCreated())
+                .andExpect(jsonPath("$.data.identifierValue").value("TSM"));
+    }
+
+    @Test
+    @DisplayName("以限定形式登記別名時子路徑仍應正確綁定")
+    void addAlias_qualifiedReference_shouldBindPathVariable() throws Exception {
+        when(companyService.getByReference("TWSE:2330")).thenReturn(tsmc);
+        when(companyService.addAlias(eq(1L), any(CreateCompanyAliasRequest.class)))
+                .thenReturn(CompanyAlias.builder().company(tsmc).normalizedAlias("tsmc").displayAlias("TSMC").build());
+
+        CreateCompanyAliasRequest request = CreateCompanyAliasRequest.builder()
+                .alias("TSMC")
+                .provenance(ProvenanceRequest.builder().sourceType(SourceType.MANUAL).build())
+                .build();
+
+        mockMvc.perform(post("/api/companies/TWSE:2330/aliases")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(request)))
+                .andExpect(status().isCreated())
+                .andExpect(jsonPath("$.data").value("tsmc"));
     }
 }

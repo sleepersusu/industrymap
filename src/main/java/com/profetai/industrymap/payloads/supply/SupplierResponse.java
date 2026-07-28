@@ -20,7 +20,8 @@ public class SupplierResponse {
     @Schema(description = "公司顯示名稱")
     private String companyName;
 
-    @Schema(description = "公司的對外識別：主要代號，無識別碼的公司則為正規化名稱", example = "2330")
+    @Schema(description = "公司的對外識別：主要代號的交易所限定形式 <類型>:<代號值>，"
+            + "無識別碼的公司則為正規化名稱", example = "TWSE:2330")
     private String companyReference;
 
     @Schema(description = "角色")

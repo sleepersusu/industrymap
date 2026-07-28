@@ -24,7 +24,7 @@ import lombok.NoArgsConstructor;
 public class BatchIdentifierItem {
 
     @NotBlank(message = "公司代號為必填")
-    @Schema(description = "公司對外識別；未上市公司用正規化名稱",
+    @Schema(description = "公司對外識別，交易所限定形式 <類型>:<代號值>；未上市公司用正規化名稱",
             example = "台積電", requiredMode = Schema.RequiredMode.REQUIRED)
     private String companyCode;
 

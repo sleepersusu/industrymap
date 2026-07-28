@@ -354,7 +354,7 @@ curl -X POST http://localhost:8080/api/bulk/supply-roles \
   -d '{
     "items": [
       {
-        "companyCode": "3037",
+        "companyCode": "TWSE:3037",
         "itemId": 81,
         "companyRole": "MANUFACTURE",
         "provenance": {"sourceType": "AI_GENERATED", "sourceDetail": "同上", "confidence": 0.8}
@@ -367,7 +367,13 @@ curl -X POST http://localhost:8080/api/bulk/supply-roles \
 `BRAND`（品牌）／`PACKAGING_TESTING`（封測）。
 **同一家公司對同一零件可有多個角色**（台積電對某晶片可同時是製造與封測），各建一筆。
 
-登記識別碼後 `companyCode` 可改用代號（如 `3037`）；未上市公司仍用正規化名稱。
+登記識別碼後 `companyCode` 可改用**交易所限定形式** `<類型>:<代號值>`（如 `TWSE:3037`）；
+未上市公司仍用正規化名稱。
+
+限定形式是公司對外識別的正式寫法，所有回應的 `reference` / `companyReference` 也都是這個形狀，
+可原封不動拿回來查詢。裸代號（`3037`）仍然可用，但**只在全系統僅一家公司持有該代號值時**——
+四位數字代號在台股、港股、滬深股的號碼空間完全重疊，撞號時系統回 **409** 並列出候選的限定形式，
+不會替你猜一家。
 
 ### 步驟 7：批次審核
 

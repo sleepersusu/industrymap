@@ -57,7 +57,7 @@ class MarketShareServiceTest {
     @InjectMocks
     private MarketShareService marketShareService;
 
-    private static final String SHIMANO_CODE = "7309";
+    private static final String SHIMANO_CODE = "TSE:7309";
 
     private final Company shimano = Company.builder().id(1L).normalizedName("shimano").displayName("Shimano").build();
     private final Item derailleur = Item.builder().id(2L).normalizedName("變速器").displayName("變速器").build();

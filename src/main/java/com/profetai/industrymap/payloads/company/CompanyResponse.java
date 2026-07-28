@@ -13,8 +13,8 @@ import lombok.NoArgsConstructor;
 import java.util.List;
 
 /**
- * 公司資料。對外不曝露內部自增主鍵，改以 {@code reference}（主要代號，沒有代號時為正規化名稱）
- * 作為後續 API 的路徑識別。
+ * 公司資料。對外不曝露內部自增主鍵，改以 {@code reference}（主要代號的交易所限定形式，
+ * 沒有代號時為正規化名稱）作為後續 API 的路徑識別。
  */
 @Data
 @Builder
@@ -23,7 +23,8 @@ import java.util.List;
 @Schema(description = "公司資料")
 public class CompanyResponse {
 
-    @Schema(description = "後續 API 使用的路徑識別：主要代號，未上市公司則為正規化名稱", example = "2330")
+    @Schema(description = "後續 API 使用的路徑識別：主要代號的交易所限定形式 <類型>:<代號值>，"
+            + "未上市公司則為正規化名稱", example = "TWSE:2330")
     private String reference;
 
     @Schema(description = "顯示用公司名稱")

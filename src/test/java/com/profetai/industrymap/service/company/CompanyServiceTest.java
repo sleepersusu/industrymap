@@ -8,6 +8,7 @@ import com.profetai.industrymap.model.Company;
 import com.profetai.industrymap.model.CompanyAlias;
 import com.profetai.industrymap.model.CompanyIdentifier;
 import com.profetai.industrymap.payloads.ProvenanceRequest;
+import com.profetai.industrymap.payloads.company.CompanyResponse;
 import com.profetai.industrymap.payloads.company.CreateCompanyAliasRequest;
 import com.profetai.industrymap.payloads.company.CreateCompanyRequest;
 import com.profetai.industrymap.payloads.company.CreateIdentifierRequest;
@@ -31,6 +32,7 @@ import java.util.Set;
 import static org.junit.jupiter.api.Assertions.assertAll;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNotEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
@@ -241,6 +243,139 @@ class CompanyServiceTest {
     }
 
     @Test
+    @DisplayName("以限定形式查詢時應只回傳該交易所的公司，不受同代號值的其他交易所影響")
+    void getByReference_qualifiedReference_shouldResolveByExchange() {
+        // Given：聯想在香港、另一家公司在上海，同樣持有代號值 0992
+        Company lenovo = Company.builder().id(5L).normalizedName("聯想").displayName("聯想").build();
+        when(companyIdentifierRepository.findByIdentifierTypeAndIdentifierValue(IdentifierType.HKEX, "0992"))
+                .thenReturn(Optional.of(CompanyIdentifier.builder().company(lenovo)
+                        .identifierType(IdentifierType.HKEX).identifierValue("0992").isPrimary(true).build()));
+        when(companyRepository.findById(5L)).thenReturn(Optional.of(lenovo));
+
+        // When / Then：限定形式走唯一鍵，不經過裸代號查詢
+        assertAll(
+                () -> assertEquals(lenovo, companyService.getByReference("HKEX:0992")),
+                () -> verify(companyIdentifierRepository, never()).findByIdentifierValue("HKEX:0992"));
+    }
+
+    @Test
+    @DisplayName("以裸代號查詢且僅單筆命中時仍應回傳該公司")
+    void getByReference_bareCodeSingleMatch_shouldReturnCompany() {
+        // 手冊與既有操作大量使用裸代號，單筆命中沒有歧義，維持可用
+        when(companyIdentifierRepository.findByIdentifierValue("2330")).thenReturn(List.of(
+                CompanyIdentifier.builder().company(tsmc).identifierType(IdentifierType.TWSE)
+                        .identifierValue("2330").isPrimary(true).build()));
+        when(companyRepository.findById(1L)).thenReturn(Optional.of(tsmc));
+
+        assertEquals(tsmc, companyService.getByReference("2330"));
+    }
+
+    @Test
+    @DisplayName("以裸代號查詢而多家公司命中時應拋 409 並列出候選限定形式")
+    void getByReference_bareCodeMultipleMatches_shouldThrowConflictListingCandidates() {
+        // Given：兩家公司在不同交易所持有相同代號值，裸代號不足以指定唯一一家
+        Company lenovo = Company.builder().id(5L).normalizedName("聯想").displayName("聯想").build();
+        Company sseListed = Company.builder().id(6L).normalizedName("某滬市公司").displayName("某滬市公司").build();
+        when(companyIdentifierRepository.findByIdentifierValue("0992")).thenReturn(List.of(
+                CompanyIdentifier.builder().company(lenovo).identifierType(IdentifierType.HKEX)
+                        .identifierValue("0992").isPrimary(true).build(),
+                CompanyIdentifier.builder().company(sseListed).identifierType(IdentifierType.SSE)
+                        .identifierValue("0992").isPrimary(true).build()));
+
+        // When
+        ServerException ex = assertThrows(ServerException.class, () -> companyService.getByReference("0992"));
+
+        // Then：MUST NOT 任選一筆；訊息須讓呼叫端知道該改用哪個限定形式
+        assertAll(
+                () -> assertEquals(HttpStatus.CONFLICT, ex.getHttpStatus()),
+                () -> assertTrue(ex.getMessage().contains("HKEX:0992")),
+                () -> assertTrue(ex.getMessage().contains("SSE:0992")),
+                () -> verify(companyRepository, never()).findById(any()));
+    }
+
+    @Test
+    @DisplayName("依代號查詢的多筆命中行為應與依路徑識別查詢一致")
+    void getByIdentifierValue_multipleMatches_shouldThrowConflictLikeGetByReference() {
+        // 兩個入口若各自為政，就會出現「同一個值在 A 端點報衝突、在 B 端點靜默回錯公司」
+        Company lenovo = Company.builder().id(5L).normalizedName("聯想").displayName("聯想").build();
+        Company sseListed = Company.builder().id(6L).normalizedName("某滬市公司").displayName("某滬市公司").build();
+        when(companyIdentifierRepository.findByIdentifierValue("0992")).thenReturn(List.of(
+                CompanyIdentifier.builder().company(lenovo).identifierType(IdentifierType.HKEX)
+                        .identifierValue("0992").isPrimary(true).build(),
+                CompanyIdentifier.builder().company(sseListed).identifierType(IdentifierType.SSE)
+                        .identifierValue("0992").isPrimary(true).build()));
+
+        ServerException ex =
+                assertThrows(ServerException.class, () -> companyService.getByIdentifierValue("0992"));
+
+        assertAll(
+                () -> assertEquals(HttpStatus.CONFLICT, ex.getHttpStatus()),
+                () -> assertTrue(ex.getMessage().contains("HKEX:0992")),
+                () -> assertTrue(ex.getMessage().contains("SSE:0992")));
+    }
+
+    @Test
+    @DisplayName("同一家公司在兩個交易所持有相同代號值時，裸代號查詢不算歧義")
+    void getByReference_sameCodeUnderTwoExchangesOfOneCompany_shouldNotConflict() {
+        // Given：上櫃轉上市會保留同一組代號，同一家公司因此可同時有 TPEX 與 TWSE 的 6488
+        Company kingYuan = Company.builder().id(9L).normalizedName("環球晶").displayName("環球晶").build();
+        when(companyIdentifierRepository.findByIdentifierValue("6488")).thenReturn(List.of(
+                CompanyIdentifier.builder().company(kingYuan).identifierType(IdentifierType.TPEX)
+                        .identifierValue("6488").isPrimary(false).build(),
+                CompanyIdentifier.builder().company(kingYuan).identifierType(IdentifierType.TWSE)
+                        .identifierValue("6488").isPrimary(true).build()));
+        when(companyRepository.findById(9L)).thenReturn(Optional.of(kingYuan));
+
+        // When / Then：歧義的定義是「指向幾家公司」，不是「有幾筆識別碼」
+        assertEquals(kingYuan, companyService.getByReference("6488"));
+    }
+
+    @Test
+    @DisplayName("已駁回的識別碼不得造成歧義，也不得出現在衝突訊息中")
+    void getByReference_rejectedCollidingIdentifier_shouldResolveToExposableCompany() {
+        // Given：台積電持有已驗證的 TWSE 2330，另有一筆被駁回的誤建資料撞到同一代號值
+        Company mistaken = Company.builder().id(8L).normalizedName("誤建公司").displayName("誤建公司").build();
+        when(companyIdentifierRepository.findByIdentifierValue("2330")).thenReturn(List.of(
+                CompanyIdentifier.builder().company(tsmc).identifierType(IdentifierType.TWSE)
+                        .identifierValue("2330").isPrimary(true).reviewStatus(ReviewStatus.VERIFIED).build(),
+                CompanyIdentifier.builder().company(mistaken).identifierType(IdentifierType.SSE)
+                        .identifierValue("2330").isPrimary(true).reviewStatus(ReviewStatus.REJECTED).build()));
+        when(companyRepository.findById(1L)).thenReturn(Optional.of(tsmc));
+
+        // When / Then：已駁回的識別碼不外露於任何回應，更不該讓合法公司查不到
+        assertEquals(tsmc, companyService.getByReference("2330"));
+    }
+
+    @Test
+    @DisplayName("以已駁回的識別碼查詢應視為查無，不得據此定位公司")
+    void getByReference_onlyRejectedIdentifierMatches_shouldFallBackToNameLookup() {
+        Company mistaken = Company.builder().id(8L).normalizedName("誤建公司").displayName("誤建公司").build();
+        when(companyIdentifierRepository.findByIdentifierTypeAndIdentifierValue(IdentifierType.SSE, "2330"))
+                .thenReturn(Optional.of(CompanyIdentifier.builder().company(mistaken)
+                        .identifierType(IdentifierType.SSE).identifierValue("2330")
+                        .reviewStatus(ReviewStatus.REJECTED).build()));
+        when(companyIdentifierRepository.findByIdentifierValue("SSE:2330")).thenReturn(List.of());
+        when(companyRepository.findByNormalizedName("sse2330")).thenReturn(Optional.empty());
+
+        assertEquals(HttpStatus.NOT_FOUND,
+                assertThrows(ServerException.class,
+                        () -> companyService.getByReference("SSE:2330")).getHttpStatus());
+    }
+
+    @Test
+    @DisplayName("代號值本身含冒號時不得被誤判為限定形式")
+    void getByReference_valueContainingColon_shouldBeTreatedAsBareValue() {
+        // Given：OTHER 類型底下登記了含冒號的值，冒號前的 ISIN 不是合法識別碼類型
+        Company infineon = Company.builder().id(7L).normalizedName("英飛凌").displayName("英飛凌").build();
+        when(companyIdentifierRepository.findByIdentifierValue("ISIN:DE0006231004")).thenReturn(List.of(
+                CompanyIdentifier.builder().company(infineon).identifierType(IdentifierType.OTHER)
+                        .identifierValue("ISIN:DE0006231004").isPrimary(false).build()));
+        when(companyRepository.findById(7L)).thenReturn(Optional.of(infineon));
+
+        assertEquals(infineon, companyService.getByReference("ISIN:DE0006231004"));
+    }
+
+    @Test
     @DisplayName("公司別名與另一家公司的正規化名稱衝突時應拋出 409 ServerException")
     void addAlias_aliasCollidesWithAnotherCompanyName_shouldThrowConflict() {
         Company mediatek = Company.builder().id(2L).normalizedName("聯發科").displayName("聯發科").build();
@@ -323,14 +458,14 @@ class CompanyServiceTest {
     }
 
     @Test
-    @DisplayName("取得公司對外識別時有主要代號應回代號")
-    void referenceOf_withPrimaryIdentifier_shouldReturnIdentifierValue() {
+    @DisplayName("取得公司對外識別時有主要代號應回該代號的限定形式")
+    void referenceOf_withPrimaryIdentifier_shouldReturnQualifiedReference() {
         CompanyIdentifier primary = CompanyIdentifier.builder()
                 .id(1L).company(tsmc).identifierType(IdentifierType.TWSE).identifierValue("2330")
                 .isPrimary(true).build();
         when(companyIdentifierRepository.findByCompanyId(1L)).thenReturn(List.of(primary));
 
-        assertEquals("2330", companyService.referenceOf(tsmc));
+        assertEquals("TWSE:2330", companyService.referenceOf(tsmc));
     }
 
     @Test
@@ -342,7 +477,7 @@ class CompanyServiceTest {
     }
 
     @Test
-    @DisplayName("批次取得對外識別時應一次查主要識別碼，有代號者回代號、無代號者回名稱")
+    @DisplayName("批次取得對外識別時應一次查主要識別碼，有代號者回限定形式、無代號者回名稱")
     void referencesOf_mixedCompanies_shouldResolveEachInSingleQuery() {
         // Given：台積電有主要代號，桂盟沒有登記任何識別碼
         CompanyIdentifier primary = CompanyIdentifier.builder()
@@ -357,7 +492,7 @@ class CompanyServiceTest {
         // Then
         assertAll(
                 () -> assertEquals(2, references.size()),
-                () -> assertEquals("2330", references.get(1L)),
+                () -> assertEquals("TWSE:2330", references.get(1L)),
                 () -> assertEquals("桂盟國際", references.get(4L)));
     }
 
@@ -369,7 +504,8 @@ class CompanyServiceTest {
                 .id(1L).company(tsmc).identifierType(IdentifierType.TWSE).identifierValue("2330")
                 .isPrimary(true).build();
         when(companyIdentifierRepository.findByCompanyId(1L)).thenReturn(List.of(primary));
-        when(companyIdentifierRepository.findByIdentifierValue("2330")).thenReturn(List.of(primary));
+        when(companyIdentifierRepository.findByIdentifierTypeAndIdentifierValue(IdentifierType.TWSE, "2330"))
+                .thenReturn(Optional.of(primary));
         when(companyRepository.findById(1L)).thenReturn(Optional.of(tsmc));
 
         // When：把回應裡的對外識別原封不動拿去查詢
@@ -377,6 +513,61 @@ class CompanyServiceTest {
 
         // Then
         assertEquals(tsmc, companyService.getByReference(reference));
+    }
+
+    @Test
+    @DisplayName("跨交易所撞號時，兩家公司的對外識別應各自不同且各自查回自己")
+    void referenceOf_collidingCodesAcrossExchanges_shouldStayDistinctAndQueryable() {
+        // Given：聯想（HKEX 0992）與某滬市公司（SSE 0992）持有相同代號值——撞號目前無實例，
+        // 因此驗收只能靠刻意建構的資料，不能等真實資料出現
+        Company lenovo = Company.builder().id(5L).normalizedName("聯想").displayName("聯想").build();
+        Company sseListed = Company.builder().id(6L).normalizedName("某滬市公司").displayName("某滬市公司").build();
+        CompanyIdentifier hkex = CompanyIdentifier.builder().id(11L).company(lenovo)
+                .identifierType(IdentifierType.HKEX).identifierValue("0992").isPrimary(true).build();
+        CompanyIdentifier sse = CompanyIdentifier.builder().id(12L).company(sseListed)
+                .identifierType(IdentifierType.SSE).identifierValue("0992").isPrimary(true).build();
+        when(companyIdentifierRepository.findByCompanyId(5L)).thenReturn(List.of(hkex));
+        when(companyIdentifierRepository.findByCompanyId(6L)).thenReturn(List.of(sse));
+        when(companyIdentifierRepository.findByIdentifierTypeAndIdentifierValue(IdentifierType.HKEX, "0992"))
+                .thenReturn(Optional.of(hkex));
+        when(companyIdentifierRepository.findByIdentifierTypeAndIdentifierValue(IdentifierType.SSE, "0992"))
+                .thenReturn(Optional.of(sse));
+        when(companyRepository.findById(5L)).thenReturn(Optional.of(lenovo));
+        when(companyRepository.findById(6L)).thenReturn(Optional.of(sseListed));
+
+        // When：各自取出對外識別再原封不動拿去查
+        String lenovoReference = companyService.referenceOf(lenovo);
+        String sseReference = companyService.referenceOf(sseListed);
+
+        // Then：識別值互不相同，且各自查回自己而非對方
+        assertAll(
+                () -> assertNotEquals(lenovoReference, sseReference),
+                () -> assertEquals(lenovo, companyService.getByReference(lenovoReference)),
+                () -> assertEquals(sseListed, companyService.getByReference(sseReference)));
+    }
+
+    @Test
+    @DisplayName("公司資料回應、單筆與批次取得的對外識別應為同一個限定形式值")
+    void companyReference_shouldBeIdenticalAcrossEndpoints() {
+        // Given：公司資料走 CompanyResponse、供應商與市佔率清單走 referencesOf——
+        // 三者若給出不同形狀，同一家公司在不同回應裡就成了兩家
+        CompanyIdentifier primary = CompanyIdentifier.builder()
+                .id(1L).company(tsmc).identifierType(IdentifierType.TWSE).identifierValue("2330")
+                .isPrimary(true).build();
+        when(companyIdentifierRepository.findByCompanyId(1L)).thenReturn(List.of(primary));
+        when(companyIdentifierRepository.findByCompanyIdInAndIsPrimaryTrue(Set.of(1L)))
+                .thenReturn(List.of(primary));
+
+        // When
+        String onCompanyResponse = CompanyResponse.from(tsmc, List.of(primary)).getReference();
+        String single = companyService.referenceOf(tsmc);
+        String batch = companyService.referencesOf(List.of(tsmc)).get(1L);
+
+        // Then
+        assertAll(
+                () -> assertEquals("TWSE:2330", onCompanyResponse),
+                () -> assertEquals(onCompanyResponse, single),
+                () -> assertEquals(onCompanyResponse, batch));
     }
 
     @Test

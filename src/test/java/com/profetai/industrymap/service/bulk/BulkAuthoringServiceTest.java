@@ -47,7 +47,11 @@ import static org.mockito.Mockito.when;
 @ExtendWith(MockitoExtension.class)
 class BulkAuthoringServiceTest {
 
+    /** 代號值本身——落地在 {@code identifier_value}，不帶交易所前綴 */
     private static final String TSMC_CODE = "2330";
+
+    /** 公司對外識別——交易所限定形式，是回應層的投影 */
+    private static final String TSMC_REFERENCE = "TWSE:2330";
 
     @Mock
     private ItemService itemService;
@@ -212,7 +216,7 @@ class BulkAuthoringServiceTest {
         CompanyItemRole role = CompanyItemRole.builder()
                 .id(51L).company(tsmc).companyRole(CompanyRole.MANUFACTURE).build();
         when(companyItemRoleService.create(any(CreateCompanyItemRoleRequest.class))).thenReturn(role);
-        when(companyService.referenceOf(tsmc)).thenReturn(TSMC_CODE);
+        when(companyService.referenceOf(tsmc)).thenReturn(TSMC_REFERENCE);
 
         // When
         List<BatchCreateResultResponse> results = bulkAuthoringService.createSupplyRoles(List.of(
@@ -223,7 +227,7 @@ class BulkAuthoringServiceTest {
         // Then
         assertAll(
                 () -> assertTrue(results.get(0).isSuccess()),
-                () -> assertEquals(TSMC_CODE, results.get(0).getNaturalKey().getCompanyCode()),
+                () -> assertEquals(TSMC_REFERENCE, results.get(0).getNaturalKey().getCompanyCode()),
                 () -> assertEquals(2L, results.get(0).getNaturalKey().getItemId()),
                 () -> assertEquals(CompanyRole.MANUFACTURE, results.get(0).getNaturalKey().getCompanyRole()),
                 () -> verify(companyItemRoleService).create(any(CreateCompanyItemRoleRequest.class)));

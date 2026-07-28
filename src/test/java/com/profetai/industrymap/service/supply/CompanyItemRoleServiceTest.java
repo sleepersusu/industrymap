@@ -49,7 +49,7 @@ class CompanyItemRoleServiceTest {
     @InjectMocks
     private CompanyItemRoleService companyItemRoleService;
 
-    private static final String TSMC_CODE = "2330";
+    private static final String TSMC_CODE = "TWSE:2330";
 
     private final Company tsmc = Company.builder().id(1L).normalizedName("台積電").displayName("台積電").build();
     private final Item chip = Item.builder().id(2L).normalizedName("晶片").displayName("晶片").build();
@@ -104,6 +104,21 @@ class CompanyItemRoleServiceTest {
 
         assertAll(
                 () -> assertEquals(HttpStatus.NOT_FOUND, ex.getHttpStatus()),
+                () -> verify(companyItemRoleRepository, never()).save(any(CompanyItemRole.class)));
+    }
+
+    @Test
+    @DisplayName("公司代號對應多家公司時應原樣回報 409 且不寫入")
+    void create_ambiguousCompanyCode_shouldPropagateConflictWithoutWriting() {
+        // 代號指向多家公司時解析拒絕任選一家；寫入路徑不得吞掉這個衝突而建出掛錯公司的角色
+        when(companyService.getByReference(TSMC_CODE)).thenThrow(new ServerException(
+                "代號 2330 對應多家公司，請改用限定形式指定：TWSE:2330、SSE:2330", HttpStatus.CONFLICT));
+
+        ServerException ex = assertThrows(ServerException.class,
+                () -> companyItemRoleService.create(request(CompanyRole.MANUFACTURE)));
+
+        assertAll(
+                () -> assertEquals(HttpStatus.CONFLICT, ex.getHttpStatus()),
                 () -> verify(companyItemRoleRepository, never()).save(any(CompanyItemRole.class)));
     }
 
