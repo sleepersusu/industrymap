@@ -25,7 +25,6 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
-import java.util.Set;
 import java.util.stream.Collectors;
 
 /**
@@ -205,19 +204,19 @@ public class CompanyService {
         if (qualifiedMatch.isPresent()) {
             return qualifiedMatch
                     .filter(identifier -> ReviewScopes.isExposable(identifier.getReviewStatus()))
-                    .map(this::initialized);
+                    .map(CompanyIdentifier::getCompany);
         }
 
         List<CompanyIdentifier> identifiers = companyIdentifierRepository.findByIdentifierValue(reference).stream()
                 .filter(identifier -> ReviewScopes.isExposable(identifier.getReviewStatus()))
                 .toList();
         if (exposableCompaniesOnly && distinctCompanyIds(identifiers).size() > 1) {
-            // 只在真的可能歧義時才多這一次查詢；單一命中時公司的審核狀態由呼叫端自己把關
+            // 單一命中時公司的審核狀態由呼叫端自己把關：在這裡濾掉會讓解析退回名稱查詢，
+            // 恰好有公司以該代號值為正規化名稱時就會靜默回錯公司
             identifiers = withoutRejectedCompanies(identifiers);
         }
 
-        List<Long> companyIds = distinctCompanyIds(identifiers);
-        if (companyIds.size() > 1) {
+        if (distinctCompanyIds(identifiers).size() > 1) {
             String candidates = identifiers.stream()
                     .map(CompanyReferences::qualify)
                     .sorted()
@@ -225,10 +224,9 @@ public class CompanyService {
             throw new ServerException("代號 " + reference + " 對應多家公司，請改用限定形式指定：" + candidates,
                     HttpStatus.CONFLICT);
         }
-        return identifiers.stream().findFirst().map(this::initialized);
+        return identifiers.stream().findFirst().map(CompanyIdentifier::getCompany);
     }
 
-    /** company 是 LAZY 關聯，但只讀主鍵不需要欄位值，這一步不會拋 LazyInitializationException */
     private List<Long> distinctCompanyIds(Collection<CompanyIdentifier> identifiers) {
         return identifiers.stream()
                 .map(identifier -> identifier.getCompany().getId())
@@ -243,26 +241,9 @@ public class CompanyService {
      * 「對外根本不存在的公司」被算進歧義，也擋不住它被寫進 409 的候選清單。</p>
      */
     private List<CompanyIdentifier> withoutRejectedCompanies(List<CompanyIdentifier> identifiers) {
-        Set<Long> rejectedCompanyIds = companyRepository.findAllById(distinctCompanyIds(identifiers)).stream()
-                .filter(company -> !ReviewScopes.isExposable(company.getReviewStatus()))
-                .map(Company::getId)
-                .collect(Collectors.toSet());
         return identifiers.stream()
-                .filter(identifier -> !rejectedCompanyIds.contains(identifier.getCompany().getId()))
+                .filter(identifier -> ReviewScopes.isExposable(identifier.getCompany().getReviewStatus()))
                 .toList();
-    }
-
-    /**
-     * 取出識別碼所屬的公司本體。
-     *
-     * <p>{@code CompanyIdentifier.company} 是 LAZY 關聯，直接回傳拿到的是未初始化的代理；
-     * open-in-view 為 false，呼叫端在交易外讀欄位時會拋 LazyInitializationException。
-     * 因此改以主鍵重新載入實體——讀代理的主鍵不會觸發初始化，這一步是安全的。</p>
-     */
-    private Company initialized(CompanyIdentifier identifier) {
-        Long companyId = identifier.getCompany().getId();
-        return companyRepository.findById(companyId)
-                .orElseThrow(() -> new ServerException("查無此公司：" + companyId, HttpStatus.NOT_FOUND));
     }
 
     /** 以名稱或別名解析既有公司，供寫入前去重使用（design D9） */
@@ -331,7 +312,7 @@ public class CompanyService {
 
         Map<Long, List<CompanyIdentifier>> primaryByCompanyId =
                 companyIdentifierRepository.findByCompanyIdInAndIsPrimaryTrue(distinctCompanies.keySet()).stream()
-                        // company 是 LAZY 關聯，但只讀主鍵不會觸發初始化，這一步是安全的
+                        // 傳進來的公司都是同一交易內已載入的實體，關聯直接解析到它們本身而非代理
                         .collect(Collectors.groupingBy(identifier -> identifier.getCompany().getId()));
 
         Map<Long, String> references = new LinkedHashMap<>();

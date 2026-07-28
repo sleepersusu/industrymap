@@ -20,7 +20,6 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
-import org.hibernate.LazyInitializationException;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.http.HttpStatus;
 
@@ -37,7 +36,6 @@ import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.lenient;
-import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
@@ -184,53 +182,15 @@ class CompanyServiceTest {
         when(companyIdentifierRepository.findByIdentifierValue("2330")).thenReturn(List.of(
                 CompanyIdentifier.builder().company(tsmc).identifierType(IdentifierType.TWSE)
                         .identifierValue("2330").isPrimary(true).build()));
-        when(companyRepository.findById(1L)).thenReturn(Optional.of(tsmc));
 
         Company found = companyService.getByIdentifierValue("2330");
 
         assertEquals(tsmc, found);
     }
 
-    @Test
-    @DisplayName("以代號查詢應回傳可直接讀取欄位的公司，而非識別碼上未初始化的關聯")
-    void getByIdentifierValue_existingCode_shouldReturnInitializedCompanyNotLazyProxy() {
-        // Given：識別碼上的 company 是 LAZY 關聯，交易結束後讀欄位會炸
-        // （open-in-view 為 false，呼叫端在交易外組裝回應）
-        CompanyIdentifier identifier = CompanyIdentifier.builder().company(uninitializedProxyOf(kmc))
-                .identifierType(IdentifierType.TWSE).identifierValue("5306").isPrimary(true).build();
-        when(companyIdentifierRepository.findByIdentifierValue("5306")).thenReturn(List.of(identifier));
-        when(companyRepository.findById(4L)).thenReturn(Optional.of(kmc));
-
-        // When
-        Company found = companyService.getByIdentifierValue("5306");
-
-        // Then：回傳的公司必須能在交易外讀取欄位
-        assertAll(
-                () -> assertEquals("桂盟國際", found.getDisplayName()),
-                () -> assertEquals("桂盟國際", found.getNormalizedName()));
-    }
-
-    @Test
-    @DisplayName("以路徑識別（代號）查詢時同樣應回傳可直接讀取欄位的公司")
-    void getByReference_matchingIdentifier_shouldReturnInitializedCompanyNotLazyProxy() {
-        CompanyIdentifier identifier = CompanyIdentifier.builder().company(uninitializedProxyOf(kmc))
-                .identifierType(IdentifierType.TWSE).identifierValue("5306").isPrimary(true).build();
-        when(companyIdentifierRepository.findByIdentifierValue("5306")).thenReturn(List.of(identifier));
-        when(companyRepository.findById(4L)).thenReturn(Optional.of(kmc));
-
-        assertEquals("桂盟國際", companyService.getByReference("5306").getDisplayName());
-    }
-
-    /** 模擬 Hibernate 的未初始化代理：只有主鍵讀得到，其餘欄位一律拋 LazyInitializationException */
-    private Company uninitializedProxyOf(Company company) {
-        Company proxy = mock(Company.class);
-        when(proxy.getId()).thenReturn(company.getId());
-        lenient().when(proxy.getDisplayName())
-                .thenThrow(new LazyInitializationException("Could not initialize proxy - no session"));
-        lenient().when(proxy.getNormalizedName())
-                .thenThrow(new LazyInitializationException("Could not initialize proxy - no session"));
-        return proxy;
-    }
+    // 「回傳的公司必須能在交易外讀取欄位」原本靠 service 以主鍵重新載入來保證，並在此以 mock 代理模擬。
+    // 該保證已移到 CompanyIdentifierRepository 的 @EntityGraph，改由 CompanyIdentifierFetchTest
+    // 對真實 Hibernate 驗證關聯確實已初始化——mock 模擬代理行為證不了這件事，故不在此重複。
 
     @Test
     @DisplayName("以不存在的代號查詢應拋出 404 ServerException")
@@ -250,7 +210,6 @@ class CompanyServiceTest {
         when(companyIdentifierRepository.findByIdentifierTypeAndIdentifierValue(IdentifierType.HKEX, "0992"))
                 .thenReturn(Optional.of(CompanyIdentifier.builder().company(lenovo)
                         .identifierType(IdentifierType.HKEX).identifierValue("0992").isPrimary(true).build()));
-        when(companyRepository.findById(5L)).thenReturn(Optional.of(lenovo));
 
         // When / Then：限定形式走唯一鍵，不經過裸代號查詢
         assertAll(
@@ -265,7 +224,6 @@ class CompanyServiceTest {
         when(companyIdentifierRepository.findByIdentifierValue("2330")).thenReturn(List.of(
                 CompanyIdentifier.builder().company(tsmc).identifierType(IdentifierType.TWSE)
                         .identifierValue("2330").isPrimary(true).build()));
-        when(companyRepository.findById(1L)).thenReturn(Optional.of(tsmc));
 
         assertEquals(tsmc, companyService.getByReference("2330"));
     }
@@ -289,8 +247,7 @@ class CompanyServiceTest {
         assertAll(
                 () -> assertEquals(HttpStatus.CONFLICT, ex.getHttpStatus()),
                 () -> assertTrue(ex.getMessage().contains("HKEX:0992")),
-                () -> assertTrue(ex.getMessage().contains("SSE:0992")),
-                () -> verify(companyRepository, never()).findById(any()));
+                () -> assertTrue(ex.getMessage().contains("SSE:0992")));
     }
 
     @Test
@@ -324,7 +281,6 @@ class CompanyServiceTest {
                         .identifierValue("6488").isPrimary(false).build(),
                 CompanyIdentifier.builder().company(kingYuan).identifierType(IdentifierType.TWSE)
                         .identifierValue("6488").isPrimary(true).build()));
-        when(companyRepository.findById(9L)).thenReturn(Optional.of(kingYuan));
 
         // When / Then：歧義的定義是「指向幾家公司」，不是「有幾筆識別碼」
         assertEquals(kingYuan, companyService.getByReference("6488"));
@@ -340,7 +296,6 @@ class CompanyServiceTest {
                         .identifierValue("2330").isPrimary(true).reviewStatus(ReviewStatus.VERIFIED).build(),
                 CompanyIdentifier.builder().company(mistaken).identifierType(IdentifierType.SSE)
                         .identifierValue("2330").isPrimary(true).reviewStatus(ReviewStatus.REJECTED).build()));
-        when(companyRepository.findById(1L)).thenReturn(Optional.of(tsmc));
 
         // When / Then：已駁回的識別碼不外露於任何回應，更不該讓合法公司查不到
         assertEquals(tsmc, companyService.getByReference("2330"));
@@ -381,9 +336,7 @@ class CompanyServiceTest {
         ServerException ex = assertThrows(ServerException.class,
                 () -> companyService.getByReference("TWSE:2330"));
 
-        assertAll(
-                () -> assertEquals(HttpStatus.NOT_FOUND, ex.getHttpStatus()),
-                () -> verify(companyRepository, never()).findById(7L));
+        assertEquals(HttpStatus.NOT_FOUND, ex.getHttpStatus());
     }
 
     @Test
@@ -398,11 +351,31 @@ class CompanyServiceTest {
                         .identifierValue("2330").reviewStatus(ReviewStatus.VERIFIED).build(),
                 CompanyIdentifier.builder().company(mistaken).identifierType(IdentifierType.SSE)
                         .identifierValue("2330").reviewStatus(ReviewStatus.VERIFIED).build()));
-        when(companyRepository.findAllById(List.of(1L, 8L))).thenReturn(List.of(tsmc, mistaken));
-        when(companyRepository.findById(1L)).thenReturn(Optional.of(tsmc));
 
         // When / Then：對外只有一家公司存在，不構成歧義
         assertEquals(tsmc, companyService.getVisibleByReference("2330"));
+    }
+
+    @Test
+    @DisplayName("唯一命中的識別碼屬於已駁回公司時應回 404，不得退回以代號值當名稱查詢")
+    void getVisibleByReference_onlyMatchBelongsToRejectedCompany_shouldNotFallBackToNameLookup() {
+        // Given：代號 2330 只命中一筆識別碼，其所屬公司已被駁回；
+        // 另有一家公司的正規化名稱恰好就是「2330」（名稱本身沒有禁止數字）
+        Company mistaken = Company.builder().id(8L).normalizedName("誤建公司").displayName("誤建公司")
+                .reviewStatus(ReviewStatus.REJECTED).build();
+        Company namedLikeCode = Company.builder().id(9L).normalizedName("2330").displayName("2330")
+                .reviewStatus(ReviewStatus.VERIFIED).build();
+        when(companyIdentifierRepository.findByIdentifierValue("2330")).thenReturn(List.of(
+                CompanyIdentifier.builder().company(mistaken).identifierType(IdentifierType.TWSE)
+                        .identifierValue("2330").reviewStatus(ReviewStatus.VERIFIED).build()));
+        lenient().when(companyRepository.findByNormalizedName("2330")).thenReturn(Optional.of(namedLikeCode));
+
+        // When / Then：單一命中時不得在解析階段就濾掉已駁回公司——濾掉會讓解析回空而退回名稱查詢，
+        // 於是一個查得到代號的請求靜默回了一家與該代號無關的公司
+        ServerException ex = assertThrows(ServerException.class,
+                () -> companyService.getVisibleByReference("2330"));
+
+        assertEquals(HttpStatus.NOT_FOUND, ex.getHttpStatus());
     }
 
     @Test
@@ -421,8 +394,7 @@ class CompanyServiceTest {
 
         assertAll(
                 () -> assertEquals(HttpStatus.CONFLICT, ex.getHttpStatus()),
-                () -> assertTrue(ex.getMessage().contains("SSE:2330")),
-                () -> verify(companyRepository, never()).findAllById(any()));
+                () -> assertTrue(ex.getMessage().contains("SSE:2330")));
     }
 
     @Test
@@ -459,7 +431,6 @@ class CompanyServiceTest {
         when(companyIdentifierRepository.findByIdentifierValue("ISIN:DE0006231004")).thenReturn(List.of(
                 CompanyIdentifier.builder().company(infineon).identifierType(IdentifierType.OTHER)
                         .identifierValue("ISIN:DE0006231004").isPrimary(false).build()));
-        when(companyRepository.findById(7L)).thenReturn(Optional.of(infineon));
 
         assertEquals(infineon, companyService.getByReference("ISIN:DE0006231004"));
     }
@@ -595,7 +566,6 @@ class CompanyServiceTest {
         when(companyIdentifierRepository.findByCompanyId(1L)).thenReturn(List.of(primary));
         when(companyIdentifierRepository.findByIdentifierTypeAndIdentifierValue(IdentifierType.TWSE, "2330"))
                 .thenReturn(Optional.of(primary));
-        when(companyRepository.findById(1L)).thenReturn(Optional.of(tsmc));
 
         // When：把回應裡的對外識別原封不動拿去查詢
         String reference = companyService.referenceOf(tsmc);
@@ -621,8 +591,6 @@ class CompanyServiceTest {
                 .thenReturn(Optional.of(hkex));
         when(companyIdentifierRepository.findByIdentifierTypeAndIdentifierValue(IdentifierType.SSE, "0992"))
                 .thenReturn(Optional.of(sse));
-        when(companyRepository.findById(5L)).thenReturn(Optional.of(lenovo));
-        when(companyRepository.findById(6L)).thenReturn(Optional.of(sseListed));
 
         // When：各自取出對外識別再原封不動拿去查
         String lenovoReference = companyService.referenceOf(lenovo);

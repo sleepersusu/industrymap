@@ -2,6 +2,7 @@ package com.profetai.industrymap.repository;
 
 import com.profetai.industrymap.enums.IdentifierType;
 import com.profetai.industrymap.model.CompanyIdentifier;
+import org.springframework.data.jpa.repository.EntityGraph;
 import org.springframework.data.jpa.repository.JpaRepository;
 
 import java.util.Collection;
@@ -10,6 +11,14 @@ import java.util.Optional;
 
 public interface CompanyIdentifierRepository extends JpaRepository<CompanyIdentifier, Long> {
 
+    /**
+     * 代號解析用的兩支查詢一律把公司一起載入（{@code @EntityGraph}）。
+     *
+     * <p>{@code company} 是 LAZY 關聯，而 {@code Company} 的 {@code @Id} 標在欄位上，
+     * Hibernate 無法在代理上攔截識別碼 getter——連讀主鍵都會觸發初始化，逐筆各補一次 SELECT。
+     * 解析代號本來就一定要用到公司本體（判定歧義、過濾已駁回、回傳實體），一次撈齊即可。</p>
+     */
+    @EntityGraph(attributePaths = "company")
     Optional<CompanyIdentifier> findByIdentifierTypeAndIdentifierValue(IdentifierType identifierType, String identifierValue);
 
     boolean existsByIdentifierTypeAndIdentifierValue(IdentifierType identifierType, String identifierValue);
@@ -20,6 +29,7 @@ public interface CompanyIdentifierRepository extends JpaRepository<CompanyIdenti
      * 命中多筆時 service 報衝突而非任選一筆，唯一定位請改用
      * {@link #findByIdentifierTypeAndIdentifierValue}。
      */
+    @EntityGraph(attributePaths = "company")
     List<CompanyIdentifier> findByIdentifierValue(String identifierValue);
 
     List<CompanyIdentifier> findByCompanyId(Long companyId);
