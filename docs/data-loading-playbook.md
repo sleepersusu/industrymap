@@ -426,6 +426,66 @@ curl -s "http://localhost:8080/api/items/81/end-products"
 若回傳為空，最常見的原因是**忘記審核**（資料還在 DRAFT）。
 加 `includeDrafts=true` 可確認資料是否確實寫入。
 
+### 步驟 9：掛爆炸圖與熱區（選配，前端互動圖的資料來源）
+
+此步驟**獨立於前八步**：節點已存在就能做，不必跟著同一輪拆解跑。
+
+**先確認節點的 id**（熱區指向的是既有節點，不要為了畫圖新建節點——紀律 1 同樣適用）：
+
+```bash
+curl -s -G "http://localhost:8080/api/items" --data-urlencode "name=腳踏車"
+```
+
+**9-1 掛圖**。`storageKey` 存**完整 URL**（前端直接當 `<img src>` 用；本後端沒有上傳端點，
+也沒有 base URL 解析，存 key 的話前端得自己猜前綴）。同一節點的同一 `viewLabel` 只能有一張。
+
+```bash
+curl -X POST http://localhost:8080/api/bulk/item-images \
+  -H 'Content-Type: application/json' \
+  -d '{"items":[{"itemId":1,"viewLabel":"爆炸圖",
+                 "storageKey":"https://…/bike-explosion.png",
+                 "widthPx":1200,"heightPx":800,
+                 "provenance":{"sourceType":"MANUAL"}}]}'
+```
+
+**9-2 標熱區**。座標是**相對比例**（絕對像素 ÷ 圖寬、÷ 圖高），至少三點，每個值落在 0–1。
+`positionLabel` 在同一張圖內唯一且不得空白——同一張圖上**可以**有多個熱區指向同一個節點
+（前煞車／後煞車），位置標籤是它們唯一的區分方式。
+
+```bash
+curl -X POST http://localhost:8080/api/bulk/item-hotspots \
+  -H 'Content-Type: application/json' \
+  -d '{"items":[{"itemImageId":5,"childItemId":2,"positionLabel":"前煞車",
+                 "polygon":[{"x":0.12,"y":0.31},{"x":0.20,"y":0.31},{"x":0.20,"y":0.40}],
+                 "provenance":{"sourceType":"MANUAL"}}]}'
+```
+
+**9-3 審核**（不審就查不到，同紀律 4）。熱區的自然鍵是「節點 + 視角標籤 + 位置標籤」，
+**不含它指向的節點**——指向不唯一，含進去就定位不到單一筆：
+
+```bash
+curl -X POST http://localhost:8080/api/reviews/batch \
+  -H 'Content-Type: application/json' \
+  -d '{"targets":[
+        {"targetType":"ITEM_IMAGE","naturalKey":{"itemId":1,"viewLabel":"爆炸圖"}},
+        {"targetType":"ITEM_HOTSPOT",
+         "naturalKey":{"itemId":1,"viewLabel":"爆炸圖","positionLabel":"前煞車"}}],
+      "targetStatus":"VERIFIED","reviewer":"你的名字"}'
+```
+
+**9-4 驗證**：`curl -s "http://localhost:8080/api/items/1/images"` 應回一張圖與其全部熱區。
+
+**這一步特有的坑**
+
+- **座標不能由讀不到圖的工具產生**。模型沒看到圖就編的多邊形會與零件位置對不上，
+  且錯得不明顯（API 全部回 200）。真座標請用影像標註工具匯出，或人工量測後換算比例；
+  開發期先用假座標把前端跑起來是可接受的過渡，但**該輪的作業紀錄必須寫明座標是假的**，
+  否則日後沒有人分得出哪些要重畫。
+- **座標超出 0–1 幾乎都是誤把絕對像素填進來**，會被擋成 400。
+- **改指向哪個節點不能用 `PUT`**：那等於是另一個熱區，應新建一筆並把舊的審成 `REJECTED`。
+  熱區**沒有** `DELETE`，移除一律以駁回表達。
+- 座標畫歪則 `PUT /api/item-hotspots/{id}` 全量替換，**修正後審核狀態退回草稿**，要重審才會再出現。
+
 ---
 
 ## 五、每輪作業後要留下的東西
