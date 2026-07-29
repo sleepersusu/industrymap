@@ -4,6 +4,7 @@ import com.profetai.industrymap.enums.CompanyRole;
 import com.profetai.industrymap.enums.ReviewStatus;
 import com.profetai.industrymap.enums.SourceType;
 import com.profetai.industrymap.exceptions.ServerException;
+import com.profetai.industrymap.helper.ReviewScopes;
 import com.profetai.industrymap.model.Company;
 import com.profetai.industrymap.model.CompanyItemRole;
 import com.profetai.industrymap.model.Item;
@@ -140,6 +141,7 @@ class CompanyItemRoleServiceTest {
     @Test
     @DisplayName("查詢零件供應公司並指定角色時應只回傳該角色的關係")
     void findSuppliers_withRoleFilter_shouldQueryFilteredByRole() {
+        givenVisibleItem();
         CompanyItemRole assembly = CompanyItemRole.builder()
                 .company(tsmc).item(chip).companyRole(CompanyRole.ASSEMBLY).build();
         when(companyItemRoleRepository.findByItemIdAndCompanyRoleAndReviewStatusIn(
@@ -158,6 +160,7 @@ class CompanyItemRoleServiceTest {
     @Test
     @DisplayName("查詢零件供應公司未指定角色時應回傳所有角色的關係")
     void findSuppliers_withoutRoleFilter_shouldReturnAllRoles() {
+        givenVisibleItem();
         CompanyItemRole design = CompanyItemRole.builder()
                 .company(tsmc).item(chip).companyRole(CompanyRole.DESIGN).build();
         CompanyItemRole manufacture = CompanyItemRole.builder()
@@ -173,6 +176,7 @@ class CompanyItemRoleServiceTest {
     @Test
     @DisplayName("明確指定納入草稿時查詢範圍應含草稿，且任何情況都不含已駁回")
     void findSuppliers_includingDrafts_shouldQueryVerifiedAndDraftButNeverRejected() {
+        givenVisibleItem();
         Set<ReviewStatus> expectedScope = Set.of(ReviewStatus.VERIFIED, ReviewStatus.DRAFT);
         when(companyItemRoleRepository.findByItemIdAndReviewStatusIn(2L, expectedScope)).thenReturn(List.of());
 
@@ -187,6 +191,7 @@ class CompanyItemRoleServiceTest {
     @Test
     @DisplayName("供應關係已驗證但其公司已被駁回時，該筆不得出現在供應商清單")
     void findSuppliers_rejectedCompany_shouldBeExcluded() {
+        givenVisibleItem();
         // Given：關係本身通過審核，但公司主檔事後被駁回
         Company rejectedCompany = Company.builder().id(9L).normalizedName("空殼公司").displayName("空殼公司")
                 .reviewStatus(ReviewStatus.REJECTED).build();
@@ -211,6 +216,7 @@ class CompanyItemRoleServiceTest {
     @Test
     @DisplayName("有主要代號的公司作為供應商時對外識別應為代號而非正規化名稱")
     void findSuppliers_companyWithPrimaryIdentifier_shouldExposeIdentifierValue() {
+        givenVisibleItem();
         // Given：台積電有主要代號 2330，對外識別必須與 CompanyResponse.reference 同一個值（design D4）
         CompanyItemRole manufacture = CompanyItemRole.builder()
                 .company(tsmc).item(chip).companyRole(CompanyRole.MANUFACTURE).build();
@@ -230,6 +236,7 @@ class CompanyItemRoleServiceTest {
     @Test
     @DisplayName("無任何識別碼的公司作為供應商時對外識別應退回正規化名稱")
     void findSuppliers_companyWithoutIdentifier_shouldFallBackToNormalizedName() {
+        givenVisibleItem();
         // Given：SRAM 是未上市公司，沒有任何代號
         Company sram = Company.builder().id(5L).normalizedName("sram").displayName("SRAM").build();
         CompanyItemRole manufacture = CompanyItemRole.builder()
@@ -248,6 +255,14 @@ class CompanyItemRoleServiceTest {
     private void givenCompanyAndItem() {
         when(companyService.getByReference(TSMC_CODE)).thenReturn(tsmc);
         when(itemRepository.findById(2L)).thenReturn(Optional.of(chip));
+    }
+
+    /**
+     * 路徑指名的節點對外可見。查詢一律先確認這件事：節點已駁回時對外不存在，
+     * 回應必須與「查無此節點」完全相同（本端點是空清單）。
+     */
+    private void givenVisibleItem() {
+        when(itemRepository.existsByIdAndReviewStatusIn(2L, ReviewScopes.exposableStatuses())).thenReturn(true);
     }
 
     private CreateCompanyItemRoleRequest request(CompanyRole companyRole) {

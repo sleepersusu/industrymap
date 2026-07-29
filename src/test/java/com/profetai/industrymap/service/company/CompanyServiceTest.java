@@ -2,6 +2,7 @@ package com.profetai.industrymap.service.company;
 
 import com.profetai.industrymap.enums.IdentifierType;
 import com.profetai.industrymap.enums.ReviewStatus;
+import com.profetai.industrymap.helper.ReviewScopes;
 import com.profetai.industrymap.enums.SourceType;
 import com.profetai.industrymap.exceptions.ServerException;
 import com.profetai.industrymap.model.Company;
@@ -714,9 +715,11 @@ class CompanyServiceTest {
     }
 
     @Test
-    @DisplayName("列出公司指定不存在的品類節點時應拋出 404 ServerException")
+    @DisplayName("列出公司指定不存在或已駁回的品類節點時應拋出 404 ServerException")
     void findCompanies_unknownItemId_shouldThrowNotFound() {
-        when(itemRepository.existsById(99L)).thenReturn(false);
+        // 存在性檢查同時擋掉已駁回的節點：兩者對外都不存在，回應必須一致，
+        // 否則呼叫端比對狀態碼就反推得到「這個 id 有資料，只是被駁回了」
+        when(itemRepository.existsByIdAndReviewStatusIn(99L, ReviewScopes.exposableStatuses())).thenReturn(false);
 
         ServerException ex = assertThrows(ServerException.class,
                 () -> companyService.findCompanies(CompanyQuery.builder().itemId(99L).build()));

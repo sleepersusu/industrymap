@@ -220,10 +220,21 @@ public class ItemService {
         return item;
     }
 
-    /** 對外以名稱或別名解析節點：已駁回的節點視為查無 */
+    /**
+     * 對外以名稱或別名解析節點：已駁回的節點視為查無。
+     *
+     * <p>刻意不直接沿用 {@link #resolveByName} 再補一層過濾：那樣只擋得住最終取得的節點，
+     * 擋不住<b>用來命中它的別名</b>。被駁回的別名是「明確判定為錯」的寫法，不該還能把節點找出來——
+     * 別名是查找路徑而非回應內容，漏掉它不會讓已駁回資料直接外露，但會讓它改變查詢結果。</p>
+     */
     @Transactional(readOnly = true)
     public Optional<Item> resolveVisibleByName(String rawName) {
-        return resolveByName(rawName).filter(item -> ReviewScopes.isExposable(item.getReviewStatus()));
+        String normalized = NameNormalizer.normalize(rawName);
+        return itemRepository.findByNormalizedName(normalized)
+                .or(() -> itemAliasRepository.findByNormalizedAlias(normalized)
+                        .filter(alias -> ReviewScopes.isExposable(alias.getReviewStatus()))
+                        .map(ItemAlias::getItem))
+                .filter(item -> ReviewScopes.isExposable(item.getReviewStatus()));
     }
 
     /**

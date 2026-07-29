@@ -59,6 +59,16 @@
 - (company) 修正以公司代號查詢公司時回 500 的問題（`GET /api/companies/{代號}`）；
   以正規化名稱查詢的路徑不受影響 — 2026-07-26 · user · (pending)
 
+- (provenance) 已駁回的品類節點不再從六個查詢端點外露。**一筆已駁回的節點，對外必須與一筆不存在的
+  節點完全不可區分**——只要有任何一處回應不同，呼叫端比對結果就能反推出「這個 id 確實有資料，
+  只是被駁回了」。具體行為變化：以已駁回的**別名**查詢節點（`GET /api/items?name=`）改回 404，
+  不再帶出節點；指名已駁回節點時，組成樹（`GET /api/products/{id}/components`）、組成關係
+  （`GET /api/items/{id}/compositions`）與終端成品回溯（`GET /api/items/{id}/end-products`）
+  一律回 404（此前回 200，組成樹還會帶出該節點的名稱與審核狀態），供應公司
+  （`GET /api/items/{id}/suppliers`）與市佔率排名（`GET /api/items/{id}/market-share`）回空清單
+  （此前照常列出），以已駁回節點過濾公司列表（`GET /api/companies?itemId=`）回 404（此前回空清單）；
+  另外，指向已駁回節點的組成關係也不再列進組成關係清單 — 2026-07-29 · user · (pending)
+
 ### 變更
 
 - (supply) **破壞性變更**：建立供應角色與寫入市佔率改以公司代號指定公司（`companyCode`），

@@ -84,6 +84,13 @@ public class CompanyItemRoleService {
      */
     @Transactional(readOnly = true)
     public List<SupplierResponse> findSuppliers(Long itemId, CompanyRole companyRole, boolean includeDrafts) {
+        // 路徑指名的節點已被駁回時對外就是不存在，回應必須與「查無此節點」完全相同（本端點是空清單）。
+        // 少了這一步，同一個 id 在 GET /api/items/{id} 是 404、在這裡卻列得出供應商，
+        // 呼叫端據此就反推得到一筆對外不存在的節點確實存在
+        if (!itemRepository.existsByIdAndReviewStatusIn(itemId, ReviewScopes.exposableStatuses())) {
+            return List.of();
+        }
+
         Set<ReviewStatus> statuses = ReviewScopes.visibleStatuses(includeDrafts);
         List<CompanyItemRole> roles = companyRole == null
                 ? companyItemRoleRepository.findByItemIdAndReviewStatusIn(itemId, statuses)

@@ -5,6 +5,7 @@ import com.profetai.industrymap.enums.ReviewStatus;
 import com.profetai.industrymap.enums.ShareMetric;
 import com.profetai.industrymap.enums.SourceType;
 import com.profetai.industrymap.exceptions.ServerException;
+import com.profetai.industrymap.helper.ReviewScopes;
 import com.profetai.industrymap.model.Company;
 import com.profetai.industrymap.model.Item;
 import com.profetai.industrymap.model.MarketShare;
@@ -186,6 +187,7 @@ class MarketShareServiceTest {
     @Test
     @DisplayName("排名查詢應回傳依百分比降冪排序的結果")
     void findRanking_existingData_shouldReturnSortedByShareDesc() {
+        givenVisibleItem();
         MarketShare top = MarketShare.builder().company(shimano).item(derailleur)
                 .sharePercent(new BigDecimal("70.0")).build();
         MarketShare second = MarketShare.builder().company(shimano).item(derailleur)
@@ -204,6 +206,7 @@ class MarketShareServiceTest {
     @Test
     @DisplayName("排名回應的公司對外識別應與供應商回應同一套規則：有主要代號時回代號")
     void findRanking_companyWithPrimaryIdentifier_shouldExposeIdentifierValue() {
+        givenVisibleItem();
         MarketShare share = MarketShare.builder().company(shimano).item(derailleur)
                 .sharePercent(new BigDecimal("70.0")).build();
         when(marketShareRepository.findRanking(2L, "YEAR", "2024", "全球", "REVENUE",
@@ -219,6 +222,7 @@ class MarketShareServiceTest {
     @Test
     @DisplayName("排名查詢無資料時應回傳空清單而非 404")
     void findRanking_noData_shouldReturnEmptyListInsteadOfNotFound() {
+        givenVisibleItem();
         when(marketShareRepository.findRanking(2L, "YEAR", "2024", "全球", "REVENUE",
                 Set.of(ReviewStatus.VERIFIED.name()))).thenReturn(List.of());
 
@@ -228,6 +232,7 @@ class MarketShareServiceTest {
     @Test
     @DisplayName("市佔率已驗證但其公司已被駁回時，該筆不得出現在排名")
     void findRanking_rejectedCompany_shouldBeExcluded() {
+        givenVisibleItem();
         // Given：市佔率本身通過審核，但公司主檔事後被駁回
         Company rejectedCompany = Company.builder().id(9L).normalizedName("空殼公司").displayName("空殼公司")
                 .reviewStatus(ReviewStatus.REJECTED).build();
@@ -251,6 +256,14 @@ class MarketShareServiceTest {
     private void givenCompanyAndItem() {
         when(companyService.getByReference(SHIMANO_CODE)).thenReturn(shimano);
         when(itemRepository.findById(2L)).thenReturn(Optional.of(derailleur));
+    }
+
+    /**
+     * 路徑指名的節點對外可見。查詢一律先確認這件事：節點已駁回時對外不存在，
+     * 回應必須與「查無此節點」完全相同（本端點是空清單）。
+     */
+    private void givenVisibleItem() {
+        when(itemRepository.existsByIdAndReviewStatusIn(2L, ReviewScopes.exposableStatuses())).thenReturn(true);
     }
 
     private CreateMarketShareRequest validRequest(String sourceDetail, BigDecimal sharePercent) {

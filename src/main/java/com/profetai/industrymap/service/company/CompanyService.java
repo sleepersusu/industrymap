@@ -259,11 +259,15 @@ public class CompanyService {
      * 回空清單會讓它以為「這個零件沒有供應商」，與事實相反。條件都成立但查無資料時
      * 才回空清單與總筆數 0。</p>
      *
-     * @throws ServerException 指定的品類節點不存在（404）
+     * <p>已駁回的節點在這裡與不存在的節點同樣回 404：兩者對外都不存在，若已駁回者改回空清單，
+     * 呼叫端只要比對狀態碼就反推得到「這個 id 確實有一筆資料，只是被駁回了」。</p>
+     *
+     * @throws ServerException 指定的品類節點不存在或已被駁回（404）
      */
     @Transactional(readOnly = true)
     public PageResponse<CompanyResponse> findCompanies(CompanyQuery query) {
-        if (query.getItemId() != null && !itemRepository.existsById(query.getItemId())) {
+        if (query.getItemId() != null
+                && !itemRepository.existsByIdAndReviewStatusIn(query.getItemId(), ReviewScopes.exposableStatuses())) {
             throw new ServerException("查無此品類節點：" + query.getItemId(), HttpStatus.NOT_FOUND);
         }
 

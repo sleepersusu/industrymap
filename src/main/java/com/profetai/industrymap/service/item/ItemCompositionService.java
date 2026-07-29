@@ -93,19 +93,27 @@ public class ItemCompositionService {
      * 組裝必須留在這個交易內。</p>
      *
      * @param includeDrafts 是否納入草稿關係；已駁回一律不外露
-     * @throws ServerException 節點不存在（404）
+     * @throws ServerException 節點不存在或已被駁回（404）
      */
     @Transactional(readOnly = true)
     public List<CompositionResponse> findCompositions(Long itemId, boolean includeDrafts) {
-        getItem(itemId);
+        getVisibleItem(itemId);
         Set<ReviewStatus> statuses = ReviewScopes.visibleStatuses(includeDrafts);
 
         // 兩個方向的結果不會重疊：DB 已擋掉自我循環，同一筆關係不可能同時以本節點為上層與下層
         return Stream.concat(
                         itemCompositionRepository.findByParentItemIdAndReviewStatusIn(itemId, statuses).stream(),
                         itemCompositionRepository.findByChildItemIdAndReviewStatusIn(itemId, statuses).stream())
+                // 關係的狀態與它兩端節點的狀態是兩回事：一筆已驗證的關係可能指向事後被駁回的節點，
+                // 此時關係過得了 statuses，另一端的節點卻不該外露——回應只有 id，照樣是已駁回資料外露
+                .filter(this::pointsAtExposableItems)
                 .map(CompositionResponse::from)
                 .toList();
+    }
+
+    private boolean pointsAtExposableItems(ItemComposition composition) {
+        return ReviewScopes.isExposable(composition.getParentItem().getReviewStatus())
+                && ReviewScopes.isExposable(composition.getChildItem().getReviewStatus());
     }
 
     /**
@@ -117,11 +125,11 @@ public class ItemCompositionService {
      * @param depth           展開層數，至少 1
      * @param necessityFilter 只取特定必要性的組成；null 表示不過濾
      * @param includeDrafts   是否納入草稿關係；預設 false 只回已驗證，已駁回一律不外露
-     * @throws ServerException 節點不存在（404）
+     * @throws ServerException 節點不存在或已被駁回（404）
      */
     @Transactional(readOnly = true)
     public ComponentNode expandTree(Long itemId, int depth, Necessity necessityFilter, boolean includeDrafts) {
-        Item root = getItem(itemId);
+        Item root = getVisibleItem(itemId);
         return buildNode(root, null, depth, necessityFilter, ReviewScopes.visibleStatuses(includeDrafts));
     }
 
@@ -155,11 +163,11 @@ public class ItemCompositionService {
      * <p>節點全站共用（design D3）才讓這個查詢有意義；若每個上層各自複製節點，
      * 跨產業關聯就查不出來。中間節點（主機板）不算終端成品，不列入結果。</p>
      *
-     * @throws ServerException 節點不存在（404）
+     * @throws ServerException 節點不存在或已被駁回（404）
      */
     @Transactional(readOnly = true)
     public List<Item> findReachableEndProducts(Long itemId, boolean includeDrafts) {
-        getItem(itemId);
+        getVisibleItem(itemId);
         Set<ReviewStatus> statuses = ReviewScopes.visibleStatuses(includeDrafts);
 
         List<Item> endProducts = new ArrayList<>();
@@ -219,5 +227,23 @@ public class ItemCompositionService {
     private Item getItem(Long itemId) {
         return itemRepository.findById(itemId)
                 .orElseThrow(() -> new ServerException("查無此品類節點：" + itemId, HttpStatus.NOT_FOUND));
+    }
+
+    /**
+     * 對外查詢用的節點解析：已駁回的節點視為不存在。
+     *
+     * <p>與 {@link #getItem} 分開的理由同 {@code ItemService.getById} / {@code getVisibleById}——
+     * 建立組成關係仍需取得節點實體本身，而對外查詢不得把已駁回的節點當成存在的資源。
+     * 少了這一層，組成樹會把已駁回節點的名稱與狀態直接回出去，同一個節點在
+     * {@code GET /api/items/{id}} 卻是 404。</p>
+     *
+     * @throws ServerException 節點不存在或已被駁回（404）
+     */
+    private Item getVisibleItem(Long itemId) {
+        Item item = getItem(itemId);
+        if (!ReviewScopes.isExposable(item.getReviewStatus())) {
+            throw new ServerException("查無此品類節點：" + itemId, HttpStatus.NOT_FOUND);
+        }
+        return item;
     }
 }

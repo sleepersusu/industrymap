@@ -1,5 +1,6 @@
 package com.profetai.industrymap.repository;
 
+import com.profetai.industrymap.enums.ReviewStatus;
 import com.profetai.industrymap.model.Item;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Query;
@@ -15,6 +16,15 @@ public interface ItemRepository extends JpaRepository<Item, Long> {
 
     /** 查某品類的細分類型（is-a 下層），與組成關係分開回傳 */
     List<Item> findByParentCategoryId(Long parentCategoryId);
+
+    /**
+     * 該節點是否存在<b>且可外露</b>。
+     *
+     * <p>對外查詢用來讓已駁回的節點與不存在的節點表現完全一致：兩者都不成立，
+     * 呼叫端因此無法從狀態碼或回應內容反推出一筆對外不存在的資料。
+     * 傳入 {@code ReviewScopes.exposableStatuses()}，狀態集合的規則不在此重寫第二份。</p>
+     */
+    boolean existsByIdAndReviewStatusIn(Long id, Collection<ReviewStatus> reviewStatuses);
 
     /**
      * 終端成品列表（design D6）。

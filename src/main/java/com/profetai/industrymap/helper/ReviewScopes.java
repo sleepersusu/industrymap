@@ -31,6 +31,16 @@ public final class ReviewScopes {
     }
 
     /**
+     * {@link #isExposable} 的集合版，供 JPA 衍生查詢使用。
+     *
+     * <p>與 {@link #visibleStatuses} 的差別就是實體與關係的差別，理由同 {@link #exposableStatusNames}。</p>
+     */
+    public static Set<ReviewStatus> exposableStatuses() {
+        return EnumSet.complementOf(EnumSet.of(ReviewStatus.REJECTED)).stream()
+                .collect(Collectors.toUnmodifiableSet());
+    }
+
+    /**
      * {@link #isExposable} 的字串集合版，供 native SQL 的 {@code IN} 使用。
      *
      * <p>與 {@link #visibleStatusNames} 的差別就是實體與關係的差別：關係的草稿取捨跟著呼叫端的

@@ -95,6 +95,12 @@ public class MarketShareService {
     @Transactional(readOnly = true)
     public List<MarketShareResponse> findRanking(Long itemId, PeriodType periodType, String periodValue,
                                                  String region, ShareMetric metric, boolean includeDrafts) {
+        // 路徑指名的節點已被駁回時對外就是不存在，回應必須與「查無此節點」完全相同（本端點是空清單），
+        // 否則呼叫端可從排名裡反推出一筆對外不存在的節點確實存在
+        if (!itemRepository.existsByIdAndReviewStatusIn(itemId, ReviewScopes.exposableStatuses())) {
+            return List.of();
+        }
+
         // 市佔率本身通過審核，不代表它指向的公司還算數；公司被駁回時這筆數字一併不外露
         List<MarketShare> visible = marketShareRepository.findRanking(itemId, periodType.name(), periodValue,
                         region, metric.name(), ReviewScopes.visibleStatusNames(includeDrafts)).stream()
