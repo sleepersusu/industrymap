@@ -28,6 +28,8 @@ import lombok.NoArgsConstructor;
  *   <tr><td>COMPANY_IDENTIFIER</td><td>identifierType + identifierValue</td></tr>
  *   <tr><td>COMPANY_ITEM_ROLE</td><td>companyCode + itemId + companyRole</td></tr>
  *   <tr><td>MARKET_SHARE</td><td>companyCode + itemId + periodType + periodValue + region + metric + sourceDetail</td></tr>
+ *   <tr><td>ITEM_IMAGE</td><td>itemId 或 name（節點）+ viewLabel</td></tr>
+ *   <tr><td>ITEM_HOTSPOT</td><td>itemId 或 name（節點）+ viewLabel + positionLabel</td></tr>
  * </table>
  */
 @Data
@@ -77,4 +79,11 @@ public class ReviewTargetKey {
     @Schema(description = "來源明細。用於 MARKET_SHARE——同一組維度可有多個來源並存，"
             + "來源是唯一鍵的一部分；來源明細為空的那筆填 null 即可")
     private String sourceDetail;
+
+    @Schema(description = "圖片的視角標籤。用於 ITEM_IMAGE、ITEM_HOTSPOT", example = "爆炸圖")
+    private String viewLabel;
+
+    @Schema(description = "熱區的位置標籤。用於 ITEM_HOTSPOT——同一張圖上可有多個熱區指向同一個節點，"
+            + "位置標籤是它們唯一的區分方式，因此自然鍵含它而不含熱區指向的節點", example = "前煞車")
+    private String positionLabel;
 }

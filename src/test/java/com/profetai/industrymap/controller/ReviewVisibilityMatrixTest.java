@@ -12,9 +12,12 @@ import com.profetai.industrymap.model.Company;
 import com.profetai.industrymap.model.CompanyAlias;
 import com.profetai.industrymap.model.CompanyIdentifier;
 import com.profetai.industrymap.model.CompanyItemRole;
+import com.profetai.industrymap.model.HotspotPoint;
 import com.profetai.industrymap.model.Item;
 import com.profetai.industrymap.model.ItemAlias;
 import com.profetai.industrymap.model.ItemComposition;
+import com.profetai.industrymap.model.ItemHotspot;
+import com.profetai.industrymap.model.ItemImage;
 import com.profetai.industrymap.model.MarketShare;
 import com.profetai.industrymap.repository.CompanyAliasRepository;
 import com.profetai.industrymap.repository.CompanyIdentifierRepository;
@@ -22,6 +25,8 @@ import com.profetai.industrymap.repository.CompanyItemRoleRepository;
 import com.profetai.industrymap.repository.CompanyRepository;
 import com.profetai.industrymap.repository.ItemAliasRepository;
 import com.profetai.industrymap.repository.ItemCompositionRepository;
+import com.profetai.industrymap.repository.ItemHotspotRepository;
+import com.profetai.industrymap.repository.ItemImageRepository;
 import com.profetai.industrymap.repository.ItemRepository;
 import com.profetai.industrymap.repository.MarketShareRepository;
 import com.profetai.industrymap.support.AbstractPostgresWebIntegrationTest;
@@ -96,13 +101,15 @@ class ReviewVisibilityMatrixTest extends AbstractPostgresWebIntegrationTest {
     private static final String REACHABLE_END_PRODUCTS = "GET /api/items/{id}/end-products";
     private static final String LIST_SUPPLIERS = "GET /api/items/{id}/suppliers";
     private static final String MARKET_SHARE_RANKING = "GET /api/items/{id}/market-share";
+    private static final String LIST_ITEM_IMAGES = "GET /api/items/{id}/images";
     private static final String LIST_COMPANIES = "GET /api/companies";
     private static final String GET_COMPANY = "GET /api/companies/{code}";
     private static final String LIST_COMPANY_ITEMS = "GET /api/companies/{code}/items";
 
-    /** 帶 review_status 的八張內容表 */
+    /** 帶 review_status 的十張內容表 */
     private enum ContentTable {
-        ITEM, ITEM_ALIAS, ITEM_COMPOSITION, COMPANY, COMPANY_ALIAS, COMPANY_IDENTIFIER, COMPANY_ITEM_ROLE, MARKET_SHARE
+        ITEM, ITEM_ALIAS, ITEM_COMPOSITION, COMPANY, COMPANY_ALIAS, COMPANY_IDENTIFIER, COMPANY_ITEM_ROLE,
+        MARKET_SHARE, ITEM_IMAGE, ITEM_HOTSPOT
     }
 
     /** 過濾可能漏掉的三個層次（design Context）；三次實際缺陷各佔一種 */
@@ -156,6 +163,10 @@ class ReviewVisibilityMatrixTest extends AbstractPostgresWebIntegrationTest {
     private CompanyItemRoleRepository companyItemRoleRepository;
     @Autowired
     private MarketShareRepository marketShareRepository;
+    @Autowired
+    private ItemImageRepository itemImageRepository;
+    @Autowired
+    private ItemHotspotRepository itemHotspotRepository;
 
     /**
      * 端點可觸及的內容表，以 repository 的實際 SQL 與 service 的組裝流程為準，不以端點名稱推測。
@@ -199,6 +210,12 @@ class ReviewVisibilityMatrixTest extends AbstractPostgresWebIntegrationTest {
                 cell(ContentTable.MARKET_SHARE, Layer.MAIN_TABLE, "市佔率排名的主查詢表"),
                 cell(ContentTable.COMPANY, Layer.REFERENCED_ENTITY, "市佔率所指向的公司"),
                 cell(ContentTable.COMPANY_IDENTIFIER, Layer.JOINED_TABLE, "組出公司對外識別時另查主要識別碼")));
+
+        matrix.put(LIST_ITEM_IMAGES, EndpointCoverage.of(
+                cell(ContentTable.ITEM, Layer.MAIN_TABLE, "路徑指名的節點"),
+                cell(ContentTable.ITEM_IMAGE, Layer.MAIN_TABLE, "該節點的圖片清單"),
+                cell(ContentTable.ITEM_HOTSPOT, Layer.JOINED_TABLE, "本頁圖片的熱區一次撈齊後巢狀組進回應"),
+                cell(ContentTable.ITEM, Layer.REFERENCED_ENTITY, "熱區所指向的品類節點")));
 
         matrix.put(LIST_COMPANIES, EndpointCoverage.of(
                 cell(ContentTable.COMPANY, Layer.MAIN_TABLE, "公司列表的主查詢表"),
@@ -376,6 +393,36 @@ class ReviewVisibilityMatrixTest extends AbstractPostgresWebIntegrationTest {
 
         assertFalse(body.contains(company.getDisplayName()),
                 failure(MARKET_SHARE_RANKING, ContentTable.MARKET_SHARE, Layer.MAIN_TABLE));
+    }
+
+    @Test
+    @DisplayName("已駁回的圖片不得出現在節點的圖片清單，其熱區也一併不得出現")
+    void getItemImages_rejectedImage_shouldNotAppearWithItsHotspots() throws Exception {
+        Item bike = item(ReviewStatus.VERIFIED, true);
+        Item brake = item(ReviewStatus.VERIFIED, false);
+        ItemImage rejectedImage = image(bike, ReviewStatus.REJECTED);
+        String positionLabel = hotspot(rejectedImage, brake, ReviewStatus.VERIFIED);
+
+        String body = okBody("/api/items/" + bike.getId() + "/images");
+
+        assertAll(
+                () -> assertFalse(body.contains(rejectedImage.getStorageKey()),
+                        failure(LIST_ITEM_IMAGES, ContentTable.ITEM_IMAGE, Layer.MAIN_TABLE)),
+                () -> assertFalse(body.contains(positionLabel),
+                        failure(LIST_ITEM_IMAGES, ContentTable.ITEM_IMAGE, Layer.MAIN_TABLE)));
+    }
+
+    @Test
+    @DisplayName("已駁回的熱區不得出現在圖片的熱區清單")
+    void getItemImages_rejectedHotspot_shouldNotAppear() throws Exception {
+        Item bike = item(ReviewStatus.VERIFIED, true);
+        Item brake = item(ReviewStatus.VERIFIED, false);
+        String positionLabel = hotspot(image(bike, ReviewStatus.VERIFIED), brake, ReviewStatus.REJECTED);
+
+        String body = okBody("/api/items/" + bike.getId() + "/images");
+
+        assertFalse(body.contains(positionLabel),
+                failure(LIST_ITEM_IMAGES, ContentTable.ITEM_HOTSPOT, Layer.JOINED_TABLE));
     }
 
     @Test
@@ -594,6 +641,24 @@ class ReviewVisibilityMatrixTest extends AbstractPostgresWebIntegrationTest {
     }
 
     @Test
+    @DisplayName("熱區指向已駁回的品類節點時不得出現在圖片的熱區清單")
+    void getItemImages_hotspotOnRejectedItem_shouldNotAppear() throws Exception {
+        // 審核逐列套用：節點被駁回時畫在圖上的熱區未必一併駁回。少了這一格，
+        // 使用者點下去會下鑽到一個對外根本不存在的節點
+        Item bike = item(ReviewStatus.VERIFIED, true);
+        Item rejectedPart = item(ReviewStatus.REJECTED, false);
+        String positionLabel = hotspot(image(bike, ReviewStatus.VERIFIED), rejectedPart, ReviewStatus.VERIFIED);
+
+        String body = okBody("/api/items/" + bike.getId() + "/images");
+
+        assertAll(
+                () -> assertFalse(body.contains(positionLabel),
+                        failure(LIST_ITEM_IMAGES, ContentTable.ITEM, Layer.REFERENCED_ENTITY)),
+                () -> assertFalse(body.contains(rejectedPart.getDisplayName()),
+                        failure(LIST_ITEM_IMAGES, ContentTable.ITEM, Layer.REFERENCED_ENTITY)));
+    }
+
+    @Test
     @DisplayName("已駁回的主要識別碼不得成為供應公司的對外識別")
     void getSuppliers_rejectedPrimaryIdentifier_shouldNotBecomeReference() throws Exception {
         // 對外識別是呼叫端回頭查詢用的鍵，帶上一個不外露的識別碼等於給出一個查不回公司的值
@@ -713,6 +778,17 @@ class ReviewVisibilityMatrixTest extends AbstractPostgresWebIntegrationTest {
 
         assertEquals(HttpStatus.NOT_FOUND.value(), response.getStatus(),
                 failure(REACHABLE_END_PRODUCTS, ContentTable.ITEM, Layer.MAIN_TABLE));
+    }
+
+    @Test
+    @DisplayName("指名已駁回的節點查圖片應回 404")
+    void getItemImages_rejectedRootItem_shouldReturnNotFound() throws Exception {
+        Item rejected = item(ReviewStatus.REJECTED, true);
+
+        MockHttpServletResponse response = fetch("/api/items/" + rejected.getId() + "/images");
+
+        assertEquals(HttpStatus.NOT_FOUND.value(), response.getStatus(),
+                failure(LIST_ITEM_IMAGES, ContentTable.ITEM, Layer.MAIN_TABLE));
     }
 
     @Test
@@ -1011,6 +1087,30 @@ class ReviewVisibilityMatrixTest extends AbstractPostgresWebIntegrationTest {
                 .sourceType(SourceType.MANUAL)
                 .reviewStatus(reviewStatus)
                 .build());
+    }
+
+    private ItemImage image(Item item, ReviewStatus reviewStatus) {
+        return itemImageRepository.saveAndFlush(ItemImage.builder()
+                .item(item)
+                .viewLabel(uniqueName("view"))
+                .storageKey("https://cdn.example.com/" + uniqueName("image") + ".png")
+                .sourceType(SourceType.MANUAL)
+                .reviewStatus(reviewStatus)
+                .build());
+    }
+
+    /** @return 可在回應中比對的位置標籤 */
+    private String hotspot(ItemImage image, Item childItem, ReviewStatus reviewStatus) {
+        String positionLabel = uniqueName("position");
+        itemHotspotRepository.saveAndFlush(ItemHotspot.builder()
+                .itemImage(image)
+                .childItem(childItem)
+                .positionLabel(positionLabel)
+                .polygon(List.of(new HotspotPoint(0.1, 0.1), new HotspotPoint(0.2, 0.1), new HotspotPoint(0.2, 0.2)))
+                .sourceType(SourceType.MANUAL)
+                .reviewStatus(reviewStatus)
+                .build());
+        return positionLabel;
     }
 
     private void marketShare(Company company, Item item, ReviewStatus reviewStatus) {

@@ -10,15 +10,22 @@ import com.profetai.industrymap.model.Company;
 import com.profetai.industrymap.model.CompanyIdentifier;
 import com.profetai.industrymap.model.CompanyItemRole;
 import com.profetai.industrymap.model.Item;
+import com.profetai.industrymap.model.HotspotPoint;
 import com.profetai.industrymap.model.ItemComposition;
+import com.profetai.industrymap.model.ItemHotspot;
+import com.profetai.industrymap.model.ItemImage;
 import com.profetai.industrymap.payloads.ProvenanceRequest;
 import com.profetai.industrymap.payloads.bulk.BatchCompositionItem;
 import com.profetai.industrymap.payloads.bulk.BatchCreateResultResponse;
 import com.profetai.industrymap.payloads.bulk.BatchIdentifierItem;
+import com.profetai.industrymap.payloads.bulk.BatchItemImageItem;
+import com.profetai.industrymap.payloads.item.CreateHotspotRequest;
 import com.profetai.industrymap.payloads.item.CreateItemRequest;
+import com.profetai.industrymap.payloads.item.HotspotPointPayload;
 import com.profetai.industrymap.payloads.supply.CreateCompanyItemRoleRequest;
 import com.profetai.industrymap.service.company.CompanyService;
 import com.profetai.industrymap.service.item.ItemCompositionService;
+import com.profetai.industrymap.service.item.ItemImageService;
 import com.profetai.industrymap.service.item.ItemService;
 import com.profetai.industrymap.service.supply.CompanyItemRoleService;
 import com.profetai.industrymap.service.supply.MarketShareService;
@@ -58,6 +65,9 @@ class BulkAuthoringServiceTest {
 
     @Mock
     private ItemCompositionService itemCompositionService;
+
+    @Mock
+    private ItemImageService itemImageService;
 
     @Mock
     private CompanyService companyService;
@@ -254,6 +264,128 @@ class BulkAuthoringServiceTest {
                 () -> assertTrue(results.get(0).isSuccess()),
                 () -> assertEquals(51L, results.get(0).getTargetId()),
                 () -> assertEquals("台積電", results.get(0).getNaturalKey().getCompanyCode()));
+    }
+
+    @Test
+    @DisplayName("批次建立圖片應逐筆回報成功並帶「節點 + 視角標籤」自然鍵")
+    void createItemImages_allValid_shouldReportEachSuccessWithNaturalKey() {
+        when(itemImageService.createImage(eq(1L), any()))
+                .thenReturn(image(71L, 1L, "爆炸圖"))
+                .thenReturn(image(72L, 1L, "側視圖"));
+
+        List<BatchCreateResultResponse> results = bulkAuthoringService.createItemImages(
+                List.of(imageItem(1L, "爆炸圖"), imageItem(1L, "側視圖")));
+
+        assertAll(
+                () -> assertEquals(2, results.size()),
+                () -> assertTrue(results.stream().allMatch(BatchCreateResultResponse::isSuccess)),
+                () -> assertEquals(ReviewTargetType.ITEM_IMAGE, results.get(0).getTargetType()),
+                () -> assertEquals(1L, results.get(0).getNaturalKey().getItemId()),
+                () -> assertEquals("爆炸圖", results.get(0).getNaturalKey().getViewLabel()),
+                () -> assertEquals(71L, results.get(0).getTargetId()));
+    }
+
+    @Test
+    @DisplayName("批次建立熱區應帶「節點 + 視角標籤 + 位置標籤」自然鍵，使建立到審核不需再查詢")
+    void createHotspots_allValid_shouldReportNaturalKeyResolvableWithoutExtraQuery() {
+        // 請求只帶圖片 id，自然鍵含的節點與視角標籤因此取自剛建立的實體
+        ItemImage image = image(71L, 1L, "爆炸圖");
+        when(itemImageService.createHotspot(any(CreateHotspotRequest.class)))
+                .thenReturn(hotspot(81L, image, "前煞車"))
+                .thenReturn(hotspot(82L, image, "後煞車"));
+
+        List<BatchCreateResultResponse> results = bulkAuthoringService.createHotspots(
+                List.of(hotspotRequest("前煞車", triangle()), hotspotRequest("後煞車", triangle())));
+
+        assertAll(
+                () -> assertEquals(ReviewTargetType.ITEM_HOTSPOT, results.get(0).getTargetType()),
+                () -> assertEquals(1L, results.get(0).getNaturalKey().getItemId()),
+                () -> assertEquals("爆炸圖", results.get(0).getNaturalKey().getViewLabel()),
+                () -> assertEquals("前煞車", results.get(0).getNaturalKey().getPositionLabel()),
+                () -> assertEquals("後煞車", results.get(1).getNaturalKey().getPositionLabel()));
+    }
+
+    @Test
+    @DisplayName("同批次內兩筆熱區的位置標籤相同時第一筆應成功、第二筆回報 409")
+    void createHotspots_duplicatedPositionLabelWithinSameBatch_shouldRejectSecondOnly() {
+        ItemImage image = image(71L, 1L, "爆炸圖");
+        when(itemImageService.createHotspot(any(CreateHotspotRequest.class)))
+                .thenReturn(hotspot(81L, image, "前煞車"))
+                .thenThrow(new ServerException("此圖片已有同一位置標籤的熱區：前煞車", HttpStatus.CONFLICT));
+
+        List<BatchCreateResultResponse> results = bulkAuthoringService.createHotspots(
+                List.of(hotspotRequest("前煞車", triangle()), hotspotRequest("前煞車", triangle())));
+
+        assertAll(
+                () -> assertTrue(results.get(0).isSuccess()),
+                () -> assertFalse(results.get(1).isSuccess()),
+                () -> assertEquals(409, results.get(1).getStatusCode()),
+                () -> assertNull(results.get(1).getNaturalKey()));
+    }
+
+    @Test
+    @DisplayName("批次中一筆熱區座標不合法時其餘應照常建立，該筆回報 400")
+    void createHotspots_oneInvalidPolygon_shouldCreateOthersAndReportBadRequest() {
+        ItemImage image = image(71L, 1L, "爆炸圖");
+        when(itemImageService.createHotspot(any(CreateHotspotRequest.class)))
+                .thenThrow(new ServerException("熱區座標必須介於 0 至 1 之間：1.01", HttpStatus.BAD_REQUEST))
+                .thenReturn(hotspot(82L, image, "後煞車"));
+
+        List<BatchCreateResultResponse> results = bulkAuthoringService.createHotspots(List.of(
+                hotspotRequest("前煞車", List.of(point(1.01, 0.1), point(0.2, 0.1), point(0.2, 0.2))),
+                hotspotRequest("後煞車", triangle())));
+
+        assertAll(
+                () -> assertFalse(results.get(0).isSuccess()),
+                () -> assertEquals(400, results.get(0).getStatusCode()),
+                () -> assertTrue(results.get(1).isSuccess()),
+                () -> assertEquals(82L, results.get(1).getTargetId()));
+    }
+
+    private BatchItemImageItem imageItem(Long itemId, String viewLabel) {
+        return BatchItemImageItem.builder()
+                .itemId(itemId)
+                .viewLabel(viewLabel)
+                .storageKey("https://cdn.example.com/" + viewLabel + ".png")
+                .provenance(manualProvenance())
+                .build();
+    }
+
+    private ItemImage image(Long id, Long itemId, String viewLabel) {
+        return ItemImage.builder()
+                .id(id)
+                .item(item(itemId, "腳踏車"))
+                .viewLabel(viewLabel)
+                .storageKey("https://cdn.example.com/" + viewLabel + ".png")
+                .build();
+    }
+
+    private ItemHotspot hotspot(Long id, ItemImage image, String positionLabel) {
+        return ItemHotspot.builder()
+                .id(id)
+                .itemImage(image)
+                .childItem(item(2L, "煞車"))
+                .positionLabel(positionLabel)
+                .polygon(List.of(new HotspotPoint(0.1, 0.1), new HotspotPoint(0.2, 0.1), new HotspotPoint(0.2, 0.2)))
+                .build();
+    }
+
+    private CreateHotspotRequest hotspotRequest(String positionLabel, List<HotspotPointPayload> polygon) {
+        return CreateHotspotRequest.builder()
+                .itemImageId(71L)
+                .childItemId(2L)
+                .positionLabel(positionLabel)
+                .polygon(polygon)
+                .provenance(manualProvenance())
+                .build();
+    }
+
+    private List<HotspotPointPayload> triangle() {
+        return List.of(point(0.1, 0.1), point(0.2, 0.1), point(0.2, 0.2));
+    }
+
+    private HotspotPointPayload point(double x, double y) {
+        return HotspotPointPayload.builder().x(x).y(y).build();
     }
 
     private Item item(Long id, String displayName) {

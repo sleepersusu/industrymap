@@ -13,6 +13,8 @@ import com.profetai.industrymap.model.CompanyItemRole;
 import com.profetai.industrymap.model.Item;
 import com.profetai.industrymap.model.ItemAlias;
 import com.profetai.industrymap.model.ItemComposition;
+import com.profetai.industrymap.model.ItemHotspot;
+import com.profetai.industrymap.model.ItemImage;
 import com.profetai.industrymap.model.MarketShare;
 import com.profetai.industrymap.payloads.review.ReviewTargetKey;
 import com.profetai.industrymap.repository.CompanyAliasRepository;
@@ -20,6 +22,8 @@ import com.profetai.industrymap.repository.CompanyIdentifierRepository;
 import com.profetai.industrymap.repository.CompanyItemRoleRepository;
 import com.profetai.industrymap.repository.ItemAliasRepository;
 import com.profetai.industrymap.repository.ItemCompositionRepository;
+import com.profetai.industrymap.repository.ItemHotspotRepository;
+import com.profetai.industrymap.repository.ItemImageRepository;
 import com.profetai.industrymap.repository.ItemRepository;
 import com.profetai.industrymap.repository.MarketShareRepository;
 import com.profetai.industrymap.service.company.CompanyService;
@@ -52,6 +56,12 @@ class NaturalKeyResolverTest {
 
     @Mock
     private ItemCompositionRepository itemCompositionRepository;
+
+    @Mock
+    private ItemImageRepository itemImageRepository;
+
+    @Mock
+    private ItemHotspotRepository itemHotspotRepository;
 
     @Mock
     private CompanyAliasRepository companyAliasRepository;
@@ -243,6 +253,96 @@ class NaturalKeyResolverTest {
         key.setSourceDetail(null);
 
         assertEquals(62L, naturalKeyResolver.resolveId(ReviewTargetType.MARKET_SHARE, key));
+    }
+
+    @Test
+    @DisplayName("以節點 id 與視角標籤應解析到對應的圖片")
+    void resolveId_itemImageByItemAndViewLabel_shouldReturnImageId() {
+        ItemImage image = ItemImage.builder().id(71L).item(chip).viewLabel("爆炸圖").build();
+        when(itemImageRepository.findByItemIdAndViewLabel(2L, "爆炸圖")).thenReturn(Optional.of(image));
+
+        Long resolved = naturalKeyResolver.resolveId(ReviewTargetType.ITEM_IMAGE,
+                ReviewTargetKey.builder().itemId(2L).viewLabel("爆炸圖").build());
+
+        assertEquals(71L, resolved);
+    }
+
+    @Test
+    @DisplayName("圖片的節點也可以用名稱指定，比對前先正規化")
+    void resolveId_itemImageByItemName_shouldNormalizeBeforeMatching() {
+        // 全程不需要內部 id 是這一組自然鍵的重點（design D3）
+        ItemImage image = ItemImage.builder().id(71L).item(chip).viewLabel("爆炸圖").build();
+        when(itemRepository.findByNormalizedName("晶片")).thenReturn(Optional.of(chip));
+        when(itemImageRepository.findByItemIdAndViewLabel(2L, "爆炸圖")).thenReturn(Optional.of(image));
+
+        Long resolved = naturalKeyResolver.resolveId(ReviewTargetType.ITEM_IMAGE,
+                ReviewTargetKey.builder().name(" 晶 片 ").viewLabel("爆炸圖").build());
+
+        assertEquals(71L, resolved);
+    }
+
+    @Test
+    @DisplayName("以節點、視角標籤與位置標籤應解析到對應的熱區")
+    void resolveId_hotspotByItemViewAndPositionLabel_shouldReturnHotspotId() {
+        ItemImage image = ItemImage.builder().id(71L).item(chip).viewLabel("爆炸圖").build();
+        ItemHotspot hotspot = ItemHotspot.builder().id(81L).itemImage(image).positionLabel("前煞車").build();
+        when(itemImageRepository.findByItemIdAndViewLabel(2L, "爆炸圖")).thenReturn(Optional.of(image));
+        when(itemHotspotRepository.findByItemImageIdAndPositionLabel(71L, "前煞車"))
+                .thenReturn(Optional.of(hotspot));
+
+        Long resolved = naturalKeyResolver.resolveId(ReviewTargetType.ITEM_HOTSPOT,
+                ReviewTargetKey.builder().itemId(2L).viewLabel("爆炸圖").positionLabel("前煞車").build());
+
+        assertEquals(81L, resolved);
+    }
+
+    @Test
+    @DisplayName("熱區自然鍵缺少位置標籤時應回 400 且訊息指出缺的是位置標籤")
+    void resolveId_hotspotWithoutPositionLabel_shouldThrowBadRequestNamingTheField() {
+        // 同一張圖上可以有多個熱區指向同一個節點，少了位置標籤就不只定位到一筆
+        ServerException ex = assertThrows(ServerException.class,
+                () -> naturalKeyResolver.resolveId(ReviewTargetType.ITEM_HOTSPOT,
+                        ReviewTargetKey.builder().itemId(2L).viewLabel("爆炸圖").build()));
+
+        assertAll(
+                () -> assertEquals(HttpStatus.BAD_REQUEST, ex.getHttpStatus()),
+                () -> assertTrue(ex.getMessage().contains("位置標籤"), ex.getMessage()));
+    }
+
+    @Test
+    @DisplayName("圖片自然鍵缺少視角標籤時應回 400 且訊息指出缺的是視角標籤")
+    void resolveId_itemImageWithoutViewLabel_shouldThrowBadRequestNamingTheField() {
+        ServerException ex = assertThrows(ServerException.class,
+                () -> naturalKeyResolver.resolveId(ReviewTargetType.ITEM_IMAGE,
+                        ReviewTargetKey.builder().itemId(2L).build()));
+
+        assertAll(
+                () -> assertEquals(HttpStatus.BAD_REQUEST, ex.getHttpStatus()),
+                () -> assertTrue(ex.getMessage().contains("視角標籤"), ex.getMessage()));
+    }
+
+    @Test
+    @DisplayName("圖片自然鍵未指定節點時應回 400 且訊息指出缺的是節點")
+    void resolveId_itemImageWithoutItem_shouldThrowBadRequestNamingTheField() {
+        ServerException ex = assertThrows(ServerException.class,
+                () -> naturalKeyResolver.resolveId(ReviewTargetType.ITEM_IMAGE,
+                        ReviewTargetKey.builder().viewLabel("爆炸圖").build()));
+
+        assertAll(
+                () -> assertEquals(HttpStatus.BAD_REQUEST, ex.getHttpStatus()),
+                () -> assertTrue(ex.getMessage().contains("節點"), ex.getMessage()));
+    }
+
+    @Test
+    @DisplayName("欄位齊全但查無圖片時應回 404")
+    void resolveId_itemImageNotFound_shouldThrowNotFound() {
+        when(itemImageRepository.findByItemIdAndViewLabel(2L, "側視圖")).thenReturn(Optional.empty());
+
+        ServerException ex = assertThrows(ServerException.class,
+                () -> naturalKeyResolver.resolveId(ReviewTargetType.ITEM_IMAGE,
+                        ReviewTargetKey.builder().itemId(2L).viewLabel("側視圖").build()));
+
+        assertEquals(HttpStatus.NOT_FOUND, ex.getHttpStatus());
     }
 
     private ReviewTargetKey marketShareKey() {

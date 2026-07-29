@@ -8,15 +8,21 @@ import com.profetai.industrymap.enums.ShareMetric;
 import com.profetai.industrymap.enums.SourceType;
 import com.profetai.industrymap.model.Company;
 import com.profetai.industrymap.model.CompanyItemRole;
+import com.profetai.industrymap.model.HotspotPoint;
 import com.profetai.industrymap.model.Item;
 import com.profetai.industrymap.model.ItemComposition;
+import com.profetai.industrymap.model.ItemHotspot;
+import com.profetai.industrymap.model.ItemImage;
 import com.profetai.industrymap.model.MarketShare;
 import com.profetai.industrymap.repository.CompanyItemRoleRepository;
 import com.profetai.industrymap.repository.CompanyRepository;
 import com.profetai.industrymap.repository.ItemCompositionRepository;
+import com.profetai.industrymap.repository.ItemHotspotRepository;
+import com.profetai.industrymap.repository.ItemImageRepository;
 import com.profetai.industrymap.repository.ItemRepository;
 import com.profetai.industrymap.repository.MarketShareRepository;
 import com.profetai.industrymap.service.item.ItemCompositionService;
+import com.profetai.industrymap.service.item.ItemImageService;
 import com.profetai.industrymap.service.supply.CompanyItemRoleService;
 import com.profetai.industrymap.service.supply.MarketShareService;
 import com.profetai.industrymap.util.NameNormalizer;
@@ -30,6 +36,7 @@ import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 
 import java.math.BigDecimal;
+import java.util.List;
 import java.util.concurrent.atomic.AtomicInteger;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
@@ -80,7 +87,13 @@ class QueryFanoutTest extends AbstractPostgresWebIntegrationTest {
     @Autowired
     private MarketShareRepository marketShareRepository;
     @Autowired
+    private ItemImageRepository itemImageRepository;
+    @Autowired
+    private ItemHotspotRepository itemHotspotRepository;
+    @Autowired
     private ItemCompositionService itemCompositionService;
+    @Autowired
+    private ItemImageService itemImageService;
     @Autowired
     private CompanyItemRoleService companyItemRoleService;
     @Autowired
@@ -153,6 +166,17 @@ class QueryFanoutTest extends AbstractPostgresWebIntegrationTest {
         assertConstantQueryCount("findSuppliedItems(role)",
                 () -> companyItemRoleService.findSuppliedItems(small.getId(), CompanyRole.MANUFACTURE, false),
                 () -> companyItemRoleService.findSuppliedItems(large.getId(), CompanyRole.MANUFACTURE, false));
+    }
+
+    @Test
+    @DisplayName("查節點圖片的 SQL 筆數不得隨熱區數成長")
+    void findImages_queryCount_shouldNotGrowWithFanout() {
+        Item small = itemWithHotspots(SMALL_FANOUT);
+        Item large = itemWithHotspots(LARGE_FANOUT);
+
+        assertConstantQueryCount("findImages",
+                () -> itemImageService.findImages(small.getId(), false),
+                () -> itemImageService.findImages(large.getId(), false));
     }
 
     /**
@@ -243,6 +267,33 @@ class QueryFanoutTest extends AbstractPostgresWebIntegrationTest {
             role(company, item(false));
         }
         return company;
+    }
+
+    /** 一個節點，掛一張圖，圖上有 fanout 個各自指向不同零件的熱區 */
+    private Item itemWithHotspots(int fanout) {
+        Item product = item(true);
+        ItemImage image = itemImageRepository.saveAndFlush(ItemImage.builder()
+                .item(product)
+                .viewLabel(uniqueName("view"))
+                .storageKey("https://cdn.example.com/" + uniqueName("image") + ".png")
+                .sourceType(SourceType.MANUAL)
+                .reviewStatus(ReviewStatus.VERIFIED)
+                .build());
+        for (int i = 0; i < fanout; i++) {
+            hotspot(image, item(false));
+        }
+        return product;
+    }
+
+    private void hotspot(ItemImage image, Item childItem) {
+        itemHotspotRepository.saveAndFlush(ItemHotspot.builder()
+                .itemImage(image)
+                .childItem(childItem)
+                .positionLabel(uniqueName("position"))
+                .polygon(List.of(new HotspotPoint(0.1, 0.1), new HotspotPoint(0.2, 0.1), new HotspotPoint(0.2, 0.2)))
+                .sourceType(SourceType.MANUAL)
+                .reviewStatus(ReviewStatus.VERIFIED)
+                .build());
     }
 
     /** 一個零件，同一切面有 fanout 筆市佔率 */

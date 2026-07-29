@@ -19,12 +19,14 @@
 | `/api/products` | 第一階段 | **終端成品列表**——產業地圖的進入點，呼叫端不需事先知道任何 id | `GET /api/products?name=&page=&size=` |
 | `/api/products/...` | 第一階段 | 產品 / BOM 拆解 | `/api/products/{id}/components` |
 | `/api/items/{id}` | 第一階段 | 品類節點的取得與**修正**（PUT 全量替換） | `PUT /api/items/{id}` |
+| `/api/items/{id}/images` | 第一階段 | **節點的圖片與熱區**——互動爆炸圖的資料層，一次回圖片與其巢狀熱區 | `GET /api/items/{id}/images`、`POST /api/items/{id}/images` |
+| `/api/item-hotspots` | 第一階段 | 熱區寫入（所屬圖片以 body 指定，避免第三層巢狀）；**刻意無 DELETE**，移除以審核駁回表達 | `POST /api/item-hotspots`、`PUT /api/item-hotspots/{id}` |
 | `/api/companies` | 第一階段 | **公司列表**——從公司側進入地圖，可依名稱／別名、國別、公開發行狀態、供應零件過濾 | `GET /api/companies?name=&country=&itemId=&page=&size=` |
 | `/api/companies/{code}` | 第一階段 | 公司基本資料與其識別碼 | `/api/companies/TWSE:2330` |
 | `/api/companies/{code}/items` | 第一階段 | **公司供應的零件**——從公司側往下走的入口；同一節點只出現一筆，角色收在 `roles` 內 | `/api/companies/TWSE:2330/items?role=MANUFACTURE` |
 | `/api/supply-relations/...` | 第一階段 | 供應角色與市佔率寫入（公司以**代號**指定，不收內部 id） | `/api/supply-relations/roles` |
-| `/api/reviews` | 第一階段 | 審核狀態流轉，八張內容表共用單一端點 | `/api/reviews`、`/api/reviews/batch` |
-| `/api/bulk/...` | 第一階段 | 內容資料的批次建立（內部作業端點） | `/api/bulk/items`、`/api/bulk/market-shares` |
+| `/api/reviews` | 第一階段 | 審核狀態流轉，十張內容表共用單一端點 | `/api/reviews`、`/api/reviews/batch` |
+| `/api/bulk/...` | 第一階段 | 內容資料的批次建立（內部作業端點） | `/api/bulk/items`、`/api/bulk/market-shares`、`/api/bulk/item-images`、`/api/bulk/item-hotspots` |
 | `/api/companies/{code}/news`、`/patents`、`/stock-price` | 後期 | 公司情資子資源 | `/api/companies/{code}/stock-price` |
 | `/api/internal/...` | 後期 | 內部服務間（如 job 觸發、健康檢查） | `/api/internal/market-sync/trigger` |
 | `/api/public/...` | 視需求 | 對外公開查詢 | `/api/public/industry-map/{productId}` |

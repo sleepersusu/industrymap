@@ -9,6 +9,8 @@ import com.profetai.industrymap.model.CompanyItemRole;
 import com.profetai.industrymap.model.Item;
 import com.profetai.industrymap.model.ItemAlias;
 import com.profetai.industrymap.model.ItemComposition;
+import com.profetai.industrymap.model.ItemHotspot;
+import com.profetai.industrymap.model.ItemImage;
 import com.profetai.industrymap.model.MarketShare;
 import com.profetai.industrymap.payloads.review.ReviewTargetKey;
 import com.profetai.industrymap.repository.CompanyAliasRepository;
@@ -16,6 +18,8 @@ import com.profetai.industrymap.repository.CompanyIdentifierRepository;
 import com.profetai.industrymap.repository.CompanyItemRoleRepository;
 import com.profetai.industrymap.repository.ItemAliasRepository;
 import com.profetai.industrymap.repository.ItemCompositionRepository;
+import com.profetai.industrymap.repository.ItemHotspotRepository;
+import com.profetai.industrymap.repository.ItemImageRepository;
 import com.profetai.industrymap.repository.ItemRepository;
 import com.profetai.industrymap.repository.MarketShareRepository;
 import com.profetai.industrymap.service.company.CompanyService;
@@ -35,7 +39,7 @@ import java.util.function.Function;
 /**
  * 把審核目標的自然鍵解析成內部 id（design D2）。
  *
- * <p>八類資料各有不同的自然鍵組合，解析邏輯集中在這一處而非散在各 service——
+ * <p>十類資料各有不同的自然鍵組合，解析邏輯集中在這一處而非散在各 service——
  * 分散的話日後新增內容表容易漏掉一種。各類型的自然鍵即其資料庫唯一鍵。</p>
  *
  * <p>兩種錯誤語意刻意分開：自然鍵欄位不足回 400 並指出缺哪些維度（市佔率有六個欄位，
@@ -50,6 +54,8 @@ public class NaturalKeyResolver {
     private final ItemRepository itemRepository;
     private final ItemAliasRepository itemAliasRepository;
     private final ItemCompositionRepository itemCompositionRepository;
+    private final ItemImageRepository itemImageRepository;
+    private final ItemHotspotRepository itemHotspotRepository;
     private final CompanyAliasRepository companyAliasRepository;
     private final CompanyIdentifierRepository companyIdentifierRepository;
     private final CompanyItemRoleRepository companyItemRoleRepository;
@@ -57,7 +63,7 @@ public class NaturalKeyResolver {
     private final CompanyService companyService;
 
     /**
-     * 各類型的解析方式以 {@link EnumMap} 註冊而非寫成八個 switch 分支，與
+     * 各類型的解析方式以 {@link EnumMap} 註冊而非寫成十個 switch 分支，與
      * {@link ReviewLookupService} 的 repository 註冊同一套作法：日後新增內容表只要多註冊一行。
      *
      * <p>值是方法參照，建立時不會碰到注入欄位，因此可安全地在欄位初始化階段組好。</p>
@@ -94,7 +100,43 @@ public class NaturalKeyResolver {
         registry.put(ReviewTargetType.COMPANY_IDENTIFIER, this::resolveCompanyIdentifier);
         registry.put(ReviewTargetType.COMPANY_ITEM_ROLE, this::resolveCompanyItemRole);
         registry.put(ReviewTargetType.MARKET_SHARE, this::resolveMarketShare);
+        registry.put(ReviewTargetType.ITEM_IMAGE, this::resolveItemImage);
+        registry.put(ReviewTargetType.ITEM_HOTSPOT, this::resolveItemHotspot);
         return registry;
+    }
+
+    private Long resolveItemImage(ReviewTargetKey key) {
+        return resolveImageEntity(ReviewTargetType.ITEM_IMAGE, key).getId();
+    }
+
+    /**
+     * 熱區的自然鍵是「節點 + 視角標籤 + 位置標籤」（design D3）。
+     *
+     * <p>刻意不含熱區指向的節點：同一張圖上可以有多個熱區指向同一個節點（前煞車與後煞車），
+     * 把指向納入自然鍵，那個組合就定位不到唯一一筆。</p>
+     */
+    private Long resolveItemHotspot(ReviewTargetKey key) {
+        requireFields(ReviewTargetType.ITEM_HOTSPOT, fields("位置標籤", key.getPositionLabel()));
+        ItemImage image = resolveImageEntity(ReviewTargetType.ITEM_HOTSPOT, key);
+        return itemHotspotRepository.findByItemImageIdAndPositionLabel(image.getId(), key.getPositionLabel())
+                .map(ItemHotspot::getId)
+                .orElseThrow(() -> notFound(ReviewTargetType.ITEM_HOTSPOT,
+                        key.getViewLabel() + " / " + key.getPositionLabel()));
+    }
+
+    /**
+     * 圖片以「節點 + 視角標籤」定位；節點本身接受 id 或名稱，與組成關係同一套寬容度。
+     *
+     * @throws ServerException 節點或視角標籤缺漏（400）、查無節點或圖片（404）
+     */
+    private ItemImage resolveImageEntity(ReviewTargetType targetType, ReviewTargetKey key) {
+        // 節點兩種指定方式擇一即可，因此以「兩者皆空才算缺」判斷，不各自要求
+        Object itemReference = key.getItemId() != null ? key.getItemId() : key.getName();
+        requireFields(targetType, fields("節點（itemId 或 name）", itemReference, "視角標籤", key.getViewLabel()));
+
+        Long itemId = key.getItemId() != null ? key.getItemId() : resolveItem(key);
+        return itemImageRepository.findByItemIdAndViewLabel(itemId, key.getViewLabel())
+                .orElseThrow(() -> notFound(targetType, itemId + " / " + key.getViewLabel()));
     }
 
     private Long resolveItem(ReviewTargetKey key) {

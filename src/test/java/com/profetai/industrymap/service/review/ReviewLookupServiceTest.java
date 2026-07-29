@@ -12,6 +12,8 @@ import com.profetai.industrymap.repository.CompanyItemRoleRepository;
 import com.profetai.industrymap.repository.CompanyRepository;
 import com.profetai.industrymap.repository.ItemAliasRepository;
 import com.profetai.industrymap.repository.ItemCompositionRepository;
+import com.profetai.industrymap.repository.ItemHotspotRepository;
+import com.profetai.industrymap.repository.ItemImageRepository;
 import com.profetai.industrymap.repository.ItemRepository;
 import com.profetai.industrymap.repository.MarketShareRepository;
 import org.junit.jupiter.api.DisplayName;
@@ -60,10 +62,16 @@ class ReviewLookupServiceTest {
     @Mock
     private MarketShareRepository marketShareRepository;
 
+    @Mock
+    private ItemImageRepository itemImageRepository;
+
+    @Mock
+    private ItemHotspotRepository itemHotspotRepository;
+
     private ReviewLookupService reviewLookupService() {
         return new ReviewLookupService(itemRepository, itemAliasRepository, itemCompositionRepository,
                 companyRepository, companyAliasRepository, companyIdentifierRepository,
-                companyItemRoleRepository, marketShareRepository);
+                companyItemRoleRepository, marketShareRepository, itemImageRepository, itemHotspotRepository);
     }
 
     @Test
@@ -89,7 +97,7 @@ class ReviewLookupServiceTest {
     }
 
     @Test
-    @DisplayName("八種支援的目標類型都應對應到可查詢的 repository")
+    @DisplayName("每一種支援的目標類型都應對應到可查詢的 repository")
     void getTarget_everySupportedType_shouldResolveRepository() {
         ReviewLookupService lookupService = reviewLookupService();
 

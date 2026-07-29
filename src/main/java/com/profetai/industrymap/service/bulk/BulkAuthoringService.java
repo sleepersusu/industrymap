@@ -7,17 +7,22 @@ import com.profetai.industrymap.model.CompanyIdentifier;
 import com.profetai.industrymap.model.CompanyItemRole;
 import com.profetai.industrymap.model.Item;
 import com.profetai.industrymap.model.ItemComposition;
+import com.profetai.industrymap.model.ItemHotspot;
+import com.profetai.industrymap.model.ItemImage;
 import com.profetai.industrymap.model.MarketShare;
 import com.profetai.industrymap.payloads.bulk.BatchCompositionItem;
 import com.profetai.industrymap.payloads.bulk.BatchCreateResultResponse;
 import com.profetai.industrymap.payloads.bulk.BatchIdentifierItem;
+import com.profetai.industrymap.payloads.bulk.BatchItemImageItem;
 import com.profetai.industrymap.payloads.company.CreateCompanyRequest;
+import com.profetai.industrymap.payloads.item.CreateHotspotRequest;
 import com.profetai.industrymap.payloads.item.CreateItemRequest;
 import com.profetai.industrymap.payloads.review.ReviewTargetKey;
 import com.profetai.industrymap.payloads.supply.CreateCompanyItemRoleRequest;
 import com.profetai.industrymap.payloads.supply.CreateMarketShareRequest;
 import com.profetai.industrymap.service.company.CompanyService;
 import com.profetai.industrymap.service.item.ItemCompositionService;
+import com.profetai.industrymap.service.item.ItemImageService;
 import com.profetai.industrymap.service.item.ItemService;
 import com.profetai.industrymap.service.supply.CompanyItemRoleService;
 import com.profetai.industrymap.service.supply.MarketShareService;
@@ -47,6 +52,7 @@ public class BulkAuthoringService {
 
     private final ItemService itemService;
     private final ItemCompositionService itemCompositionService;
+    private final ItemImageService itemImageService;
     private final CompanyService companyService;
     private final CompanyItemRoleService companyItemRoleService;
     private final MarketShareService marketShareService;
@@ -106,6 +112,38 @@ public class BulkAuthoringService {
                             .companyCode(referenceOf(role.getCompany(), request.getCompanyCode()))
                             .itemId(request.getItemId())
                             .companyRole(request.getCompanyRole())
+                            .build());
+        });
+    }
+
+    /** 批次建立節點圖片 */
+    public List<BatchCreateResultResponse> createItemImages(List<BatchItemImageItem> requests) {
+        return createEach(requests, (index, request) -> {
+            ItemImage image = itemImageService.createImage(request.getItemId(), request.toRequest());
+            return BatchCreateResultResponse.success(index, ReviewTargetType.ITEM_IMAGE, image.getId(),
+                    ReviewTargetKey.builder()
+                            .itemId(request.getItemId())
+                            .viewLabel(request.getViewLabel())
+                            .build());
+        });
+    }
+
+    /**
+     * 批次建立圖片熱區——熱區的自然批次單位是一張圖：標記一張爆炸圖會一次產生數十個熱區，
+     * 逐筆呼叫沒有意義。
+     *
+     * <p>自然鍵含圖片所屬節點，因此取自剛建立的實體而非請求（請求只帶圖片 id）；
+     * 該關聯已在 service 的交易內載入（見 {@code ItemImageRepository#findWithItemById}）。</p>
+     */
+    public List<BatchCreateResultResponse> createHotspots(List<CreateHotspotRequest> requests) {
+        return createEach(requests, (index, request) -> {
+            ItemHotspot hotspot = itemImageService.createHotspot(request);
+            ItemImage image = hotspot.getItemImage();
+            return BatchCreateResultResponse.success(index, ReviewTargetType.ITEM_HOTSPOT, hotspot.getId(),
+                    ReviewTargetKey.builder()
+                            .itemId(image.getItem().getId())
+                            .viewLabel(image.getViewLabel())
+                            .positionLabel(hotspot.getPositionLabel())
                             .build());
         });
     }

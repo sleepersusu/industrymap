@@ -6,7 +6,7 @@ package com.profetai.industrymap.enums;
  * <p>審核端點以類型參數驅動，型別安全較弱；以白名單限制可接受的類型，
  * 不在清單內的值在 API 邊界就被擋成 400，而不是進到 service 才炸成 500。</p>
  *
- * <p>清單必須與帶有來源與審核欄位的八張內容表（{@code ProvenanceEntity} 的子類）一致；
+ * <p>清單必須與帶有來源與審核欄位的十張內容表（{@code ProvenanceEntity} 的子類）一致；
  * 日後新增內容表時，這裡與 {@code ReviewLookupService} 的 repository 註冊要一起補。</p>
  */
 public enum ReviewTargetType {
@@ -33,5 +33,11 @@ public enum ReviewTargetType {
     COMPANY_ITEM_ROLE,
 
     /** 市佔率 */
-    MARKET_SHARE
+    MARKET_SHARE,
+
+    /** 品類節點的圖片 */
+    ITEM_IMAGE,
+
+    /** 圖片上的可點擊區域 */
+    ITEM_HOTSPOT
 }

@@ -36,7 +36,9 @@ PostgreSQL / RabbitMQ（或等效 queue）/ Redis（快取）/ 外部資料來�
 | `CompanyIdentifier` | `company_identifier` | 已落地 | 公司代號（交易所／統編／DUNS），`unique(type, value)`，每公司至多一筆 `is_primary` |
 | `CompanyItemRole` | `company_item_role` | 已落地 | 公司對零件的角色（設計／製造／代工組裝／品牌／封測），唯一鍵含角色 |
 | `MarketShare` | `market_share` | 已落地 | 市佔率，必帶期間／地區／口徑；唯一鍵含來源，讓衝突數值並存 |
-| `ProvenanceEntity` | （`@MappedSuperclass`） | 已落地 | 八張內容表共用的來源與審核欄位群 |
+| `ItemImage` | `item_image` | 已落地 | 品類節點的圖片（爆炸圖／側視圖），只存物件儲存位置；自然鍵 `(item_id, view_label)` |
+| `ItemHotspot` | `item_hotspot` | 已落地 | 圖上的可點擊區域，指向品類節點並帶位置標籤與 0–1 相對比例多邊形（JSONB）；唯一鍵 `(item_image_id, position_label)`，**刻意不含 `child_item_id`** |
+| `ProvenanceEntity` | （`@MappedSuperclass`） | 已落地 | 十張內容表共用的來源與審核欄位群 |
 | `CompanyRelation`（公司合作關係） | — | 後期 | 公司之間的供應鏈 / 合作關係 |
 | `Patent`（專利） | — | 後期 | 公司持有、與特定零組件相關的專利 |
 | `StockPrice`（股價） | — | 後期 | 公司股價時間序列，定期同步；掛在 `CompanyIdentifier` 的主要識別碼上 |

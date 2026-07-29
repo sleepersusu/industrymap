@@ -6,7 +6,10 @@ import com.profetai.industrymap.enums.SourceType;
 import com.profetai.industrymap.payloads.ProvenanceRequest;
 import com.profetai.industrymap.payloads.bulk.BatchCreateRequest;
 import com.profetai.industrymap.payloads.bulk.BatchCreateResultResponse;
+import com.profetai.industrymap.payloads.bulk.BatchItemImageItem;
+import com.profetai.industrymap.payloads.item.CreateHotspotRequest;
 import com.profetai.industrymap.payloads.item.CreateItemRequest;
+import com.profetai.industrymap.payloads.item.HotspotPointPayload;
 import com.profetai.industrymap.payloads.review.ReviewTargetKey;
 import com.profetai.industrymap.service.bulk.BulkAuthoringService;
 import org.junit.jupiter.api.DisplayName;
@@ -89,6 +92,62 @@ class BulkAuthoringControllerTest {
                 .andExpect(status().isBadRequest());
 
         verify(bulkAuthoringService, never()).createItems(any());
+    }
+
+    @Test
+    @DisplayName("批次建立熱區成功時應逐筆帶回「節點 + 視角標籤 + 位置標籤」自然鍵")
+    void createHotspots_valid_shouldReturnNaturalKeys() throws Exception {
+        when(bulkAuthoringService.createHotspots(anyList())).thenReturn(List.of(
+                BatchCreateResultResponse.success(0, ReviewTargetType.ITEM_HOTSPOT, 81L,
+                        ReviewTargetKey.builder().itemId(1L).viewLabel("爆炸圖").positionLabel("前煞車").build())));
+
+        mockMvc.perform(post("/api/bulk/item-hotspots")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(
+                                BatchCreateRequest.<CreateHotspotRequest>builder()
+                                        .items(List.of(hotspotRequest("前煞車"))).build())))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data[0].naturalKey.viewLabel").value("爆炸圖"))
+                .andExpect(jsonPath("$.data[0].naturalKey.positionLabel").value("前煞車"));
+    }
+
+    @Test
+    @DisplayName("批次建立熱區的座標不合法時應回傳 400 且不進 service")
+    void createHotspots_invalidPolygon_shouldReturnBadRequest() throws Exception {
+        CreateHotspotRequest invalid = hotspotRequest("前煞車");
+        invalid.setPolygon(List.of(HotspotPointPayload.builder().x(0.1).y(0.1).build()));
+
+        mockMvc.perform(post("/api/bulk/item-hotspots")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(
+                                BatchCreateRequest.<CreateHotspotRequest>builder().items(List.of(invalid)).build())))
+                .andExpect(status().isBadRequest());
+
+        verify(bulkAuthoringService, never()).createHotspots(any());
+    }
+
+    @Test
+    @DisplayName("批次建立圖片的空批次應回傳 400 且不進 service")
+    void createItemImages_emptyBatch_shouldReturnBadRequest() throws Exception {
+        mockMvc.perform(post("/api/bulk/item-images")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(
+                                BatchCreateRequest.<BatchItemImageItem>builder().items(List.of()).build())))
+                .andExpect(status().isBadRequest());
+
+        verify(bulkAuthoringService, never()).createItemImages(any());
+    }
+
+    private CreateHotspotRequest hotspotRequest(String positionLabel) {
+        return CreateHotspotRequest.builder()
+                .itemImageId(71L)
+                .childItemId(2L)
+                .positionLabel(positionLabel)
+                .polygon(List.of(HotspotPointPayload.builder().x(0.1).y(0.1).build(),
+                        HotspotPointPayload.builder().x(0.2).y(0.1).build(),
+                        HotspotPointPayload.builder().x(0.2).y(0.2).build()))
+                .provenance(ProvenanceRequest.builder().sourceType(SourceType.MANUAL).build())
+                .build();
     }
 
     private BatchCreateRequest<CreateItemRequest> batchOf(CreateItemRequest... requests) {

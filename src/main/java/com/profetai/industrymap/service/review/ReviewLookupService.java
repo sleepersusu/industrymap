@@ -9,6 +9,8 @@ import com.profetai.industrymap.repository.CompanyItemRoleRepository;
 import com.profetai.industrymap.repository.CompanyRepository;
 import com.profetai.industrymap.repository.ItemAliasRepository;
 import com.profetai.industrymap.repository.ItemCompositionRepository;
+import com.profetai.industrymap.repository.ItemHotspotRepository;
+import com.profetai.industrymap.repository.ItemImageRepository;
 import com.profetai.industrymap.repository.ItemRepository;
 import com.profetai.industrymap.repository.MarketShareRepository;
 import org.springframework.data.jpa.repository.JpaRepository;
@@ -21,8 +23,8 @@ import java.util.Map;
 /**
  * 依審核目標類型取得對應實體（design D1）。
  *
- * <p>八張內容表的查找只差在用哪個 repository，因此以 {@link EnumMap} 註冊查找函式，
- * 而不是寫成八個 switch 分支——日後新增內容表只要多註冊一行。
+ * <p>十張內容表的查找只差在用哪個 repository，因此以 {@link EnumMap} 註冊查找函式，
+ * 而不是寫成十個 switch 分支——日後新增內容表只要多註冊一行。
  * 查詢一律走 Spring Data 內建的 {@code findById}，本層不寫任何 SQL 或 JPQL。</p>
  */
 @Service
@@ -37,7 +39,9 @@ public class ReviewLookupService {
                                CompanyAliasRepository companyAliasRepository,
                                CompanyIdentifierRepository companyIdentifierRepository,
                                CompanyItemRoleRepository companyItemRoleRepository,
-                               MarketShareRepository marketShareRepository) {
+                               MarketShareRepository marketShareRepository,
+                               ItemImageRepository itemImageRepository,
+                               ItemHotspotRepository itemHotspotRepository) {
 
         Map<ReviewTargetType, JpaRepository<? extends ProvenanceEntity, Long>> registry =
                 new EnumMap<>(ReviewTargetType.class);
@@ -49,6 +53,8 @@ public class ReviewLookupService {
         registry.put(ReviewTargetType.COMPANY_IDENTIFIER, companyIdentifierRepository);
         registry.put(ReviewTargetType.COMPANY_ITEM_ROLE, companyItemRoleRepository);
         registry.put(ReviewTargetType.MARKET_SHARE, marketShareRepository);
+        registry.put(ReviewTargetType.ITEM_IMAGE, itemImageRepository);
+        registry.put(ReviewTargetType.ITEM_HOTSPOT, itemHotspotRepository);
         this.repositories = Map.copyOf(registry);
     }
 

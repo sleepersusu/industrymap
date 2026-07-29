@@ -8,8 +8,10 @@ import com.profetai.industrymap.payloads.item.AmendItemRequest;
 import com.profetai.industrymap.payloads.item.CompositionResponse;
 import com.profetai.industrymap.payloads.item.CreateCompositionRequest;
 import com.profetai.industrymap.payloads.item.CreateItemAliasRequest;
+import com.profetai.industrymap.payloads.item.CreateItemImageRequest;
 import com.profetai.industrymap.payloads.item.CreateItemRequest;
 import com.profetai.industrymap.payloads.item.ItemAliasResponse;
+import com.profetai.industrymap.payloads.item.ItemImageResponse;
 import com.profetai.industrymap.payloads.item.ItemResponse;
 import com.profetai.industrymap.payloads.item.ResolveItemQuery;
 import com.profetai.industrymap.payloads.supply.MarketShareQuery;
@@ -17,6 +19,7 @@ import com.profetai.industrymap.payloads.supply.MarketShareResponse;
 import com.profetai.industrymap.payloads.supply.SupplierQuery;
 import com.profetai.industrymap.payloads.supply.SupplierResponse;
 import com.profetai.industrymap.service.item.ItemCompositionService;
+import com.profetai.industrymap.service.item.ItemImageService;
 import com.profetai.industrymap.service.item.ItemService;
 import com.profetai.industrymap.service.supply.CompanyItemRoleService;
 import com.profetai.industrymap.service.supply.MarketShareService;
@@ -53,6 +56,7 @@ public class ItemController {
 
     private final ItemService itemService;
     private final ItemCompositionService itemCompositionService;
+    private final ItemImageService itemImageService;
     private final CompanyItemRoleService companyItemRoleService;
     private final MarketShareService marketShareService;
 
@@ -151,6 +155,36 @@ public class ItemController {
             @PathVariable Long id, @Valid @ModelAttribute ReviewScopeQuery query) {
 
         return ServerResponses.ok(itemCompositionService.findCompositions(id, query.isIncludeDrafts()));
+    }
+
+    @PostMapping("/{id}/images")
+    @Operation(summary = "為品類節點掛一張圖",
+            description = "只收物件儲存的 key 或 URL，圖片的二進位不進資料庫；本次沒有上傳端點。"
+                    + "同一節點的同一視角標籤只能有一張。")
+    @ApiResponses({
+            @ApiResponse(responseCode = "201", description = "建立成功"),
+            @ApiResponse(responseCode = "400", description = "欄位驗證失敗"),
+            @ApiResponse(responseCode = "404", description = "查無此節點"),
+            @ApiResponse(responseCode = "409", description = "此節點已有同一視角標籤的圖片")
+    })
+    public ResponseEntity<ServerResponse<ItemImageResponse>> addImage(
+            @PathVariable Long id, @Valid @RequestBody CreateItemImageRequest request) {
+
+        return ServerResponses.created(ItemImageResponse.from(itemImageService.createImage(id, request)));
+    }
+
+    @GetMapping("/{id}/images")
+    @Operation(summary = "查節點的圖片與熱區",
+            description = "每張圖一併帶回它的熱區（座標為 0–1 的相對比例），前端畫一張可互動的圖只需一次呼叫。"
+                    + "熱區指向的節點若已被駁回，該熱區不會出現。")
+    @ApiResponses({
+            @ApiResponse(responseCode = "200", description = "成功；無圖片時回空清單而非 404"),
+            @ApiResponse(responseCode = "404", description = "查無此節點")
+    })
+    public ResponseEntity<ServerResponse<List<ItemImageResponse>>> getImages(
+            @PathVariable Long id, @Valid @ModelAttribute ReviewScopeQuery query) {
+
+        return ServerResponses.ok(itemImageService.findImages(id, query.isIncludeDrafts()));
     }
 
     @GetMapping("/{id}/end-products")

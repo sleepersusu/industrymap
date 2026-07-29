@@ -56,6 +56,17 @@
   已駁回的角色、以及指向已駁回節點的角色都不外露。此前公司頁只拿得到基本資料與代號，
   知道一家公司卻無從得知它做哪些零件，地圖從公司側進去就走不下去 — 2026-07-29 · user · (pending)
 
+- (item-imagery) 新增品類節點的圖片與熱區，互動爆炸圖的資料層自此存在：
+  `POST /api/items/{id}/images` 為節點掛圖（只收物件儲存的 key 或 URL，**本次不含上傳端點**），
+  `GET /api/items/{id}/images` 一次回該節點的圖片與其巢狀熱區，前端畫一張可互動的圖只需一次呼叫。
+  熱區以 `POST /api/item-hotspots` 標記，帶 0–1 相對比例的多邊形座標（至少三點）與**位置標籤**；
+  同一張圖上可以有多個熱區指向同一個節點（前煞車／後煞車），以位置標籤區分，
+  組成關係仍維持單一筆、語意不變。座標畫歪可用 `PUT /api/item-hotspots/{id}` 全量替換
+  （內容實際變更後退回草稿），**畫錯的熱區以審核駁回移除，刻意不提供刪除端點**。
+  圖片與熱區同樣記錄來源與審核狀態，可經 `/api/reviews` 以「節點 + 視角標籤（+ 位置標籤）」
+  自然鍵審核，並支援 `/api/bulk/item-images` 與 `/api/bulk/item-hotspots` 批次建立。
+  已駁回的圖片、熱區、以及**指向已駁回節點的熱區**都不外露 — 2026-07-29 · user · (pending)
+
 - (config) 新增可設定的跨來源（CORS）允許清單 `industrymap.cors.allowed-origins`，
   預設為本機前端開發用的 `http://localhost:5173` 與 `http://localhost:3000`，可經
   `CORS_ALLOWED_ORIGINS` 覆寫。此前完全沒有 CORS 設定，前端跑在另一個 port 時

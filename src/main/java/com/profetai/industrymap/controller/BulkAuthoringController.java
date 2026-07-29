@@ -6,7 +6,9 @@ import com.profetai.industrymap.payloads.bulk.BatchCompositionItem;
 import com.profetai.industrymap.payloads.bulk.BatchCreateRequest;
 import com.profetai.industrymap.payloads.bulk.BatchCreateResultResponse;
 import com.profetai.industrymap.payloads.bulk.BatchIdentifierItem;
+import com.profetai.industrymap.payloads.bulk.BatchItemImageItem;
 import com.profetai.industrymap.payloads.company.CreateCompanyRequest;
+import com.profetai.industrymap.payloads.item.CreateHotspotRequest;
 import com.profetai.industrymap.payloads.item.CreateItemRequest;
 import com.profetai.industrymap.payloads.supply.CreateCompanyItemRoleRequest;
 import com.profetai.industrymap.payloads.supply.CreateMarketShareRequest;
@@ -103,6 +105,33 @@ public class BulkAuthoringController {
             @Valid @RequestBody BatchCreateRequest<CreateCompanyItemRoleRequest> request) {
 
         return ServerResponses.ok(bulkAuthoringService.createSupplyRoles(request.getItems()));
+    }
+
+    @PostMapping("/item-images")
+    @Operation(summary = "批次建立節點圖片",
+            description = "各筆自帶所屬節點；同一節點的視角標籤重複的那筆回報 409，其餘照常建立。")
+    @ApiResponses({
+            @ApiResponse(responseCode = "200", description = "批次處理完成，逐筆回報結果"),
+            @ApiResponse(responseCode = "400", description = "空批次或欄位驗證失敗")
+    })
+    public ResponseEntity<ServerResponse<List<BatchCreateResultResponse>>> createItemImages(
+            @Valid @RequestBody BatchCreateRequest<BatchItemImageItem> request) {
+
+        return ServerResponses.ok(bulkAuthoringService.createItemImages(request.getItems()));
+    }
+
+    @PostMapping("/item-hotspots")
+    @Operation(summary = "批次建立圖片熱區",
+            description = "熱區的自然批次單位是一張圖——標記一張爆炸圖會一次產生數十個熱區。"
+                    + "座標不合法的那筆回報 400、位置標籤重複的那筆回報 409，其餘照常建立。")
+    @ApiResponses({
+            @ApiResponse(responseCode = "200", description = "批次處理完成，逐筆回報結果"),
+            @ApiResponse(responseCode = "400", description = "空批次或欄位驗證失敗")
+    })
+    public ResponseEntity<ServerResponse<List<BatchCreateResultResponse>>> createHotspots(
+            @Valid @RequestBody BatchCreateRequest<CreateHotspotRequest> request) {
+
+        return ServerResponses.ok(bulkAuthoringService.createHotspots(request.getItems()));
     }
 
     @PostMapping("/market-shares")

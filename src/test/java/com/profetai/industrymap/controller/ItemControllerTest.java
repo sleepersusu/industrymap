@@ -10,8 +10,13 @@ import com.profetai.industrymap.payloads.ProvenanceRequest;
 import com.profetai.industrymap.payloads.item.AmendItemRequest;
 import com.profetai.industrymap.payloads.item.CompositionResponse;
 import com.profetai.industrymap.payloads.item.CreateCompositionRequest;
+import com.profetai.industrymap.payloads.item.CreateItemImageRequest;
 import com.profetai.industrymap.payloads.item.CreateItemRequest;
+import com.profetai.industrymap.payloads.item.HotspotPointPayload;
+import com.profetai.industrymap.payloads.item.HotspotResponse;
+import com.profetai.industrymap.payloads.item.ItemImageResponse;
 import com.profetai.industrymap.service.item.ItemCompositionService;
+import com.profetai.industrymap.service.item.ItemImageService;
 import com.profetai.industrymap.service.item.ItemService;
 import com.profetai.industrymap.service.supply.CompanyItemRoleService;
 import com.profetai.industrymap.service.supply.MarketShareService;
@@ -58,6 +63,9 @@ class ItemControllerTest {
 
     @MockitoBean
     private ItemCompositionService itemCompositionService;
+
+    @MockitoBean
+    private ItemImageService itemImageService;
 
     @MockitoBean
     private CompanyItemRoleService companyItemRoleService;
@@ -281,6 +289,82 @@ class ItemControllerTest {
         mockMvc.perform(get("/api/items/99/compositions"))
                 .andExpect(status().isNotFound())
                 .andExpect(jsonPath("$.success").value(false));
+    }
+
+    @Test
+    @DisplayName("查節點圖片應回傳圖片與其巢狀的熱區")
+    void getImages_existingImages_shouldNestHotspots() throws Exception {
+        when(itemImageService.findImages(1L, false)).thenReturn(List.of(
+                ItemImageResponse.builder().id(5L).itemId(1L).viewLabel("爆炸圖")
+                        .storageKey("https://cdn.example.com/bike.png").reviewStatus(ReviewStatus.VERIFIED)
+                        .hotspots(List.of(HotspotResponse.builder().id(9L).itemImageId(5L).childItemId(2L)
+                                .childDisplayName("煞車").positionLabel("前煞車")
+                                .polygon(triangle()).reviewStatus(ReviewStatus.VERIFIED).build()))
+                        .build()));
+
+        mockMvc.perform(get("/api/items/1/images"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.length()").value(1))
+                .andExpect(jsonPath("$.data[0].viewLabel").value("爆炸圖"))
+                .andExpect(jsonPath("$.data[0].hotspots[0].positionLabel").value("前煞車"))
+                .andExpect(jsonPath("$.data[0].hotspots[0].polygon.length()").value(3));
+    }
+
+    @Test
+    @DisplayName("節點沒有任何圖片時應回傳 200 與空清單，而非 404")
+    void getImages_noImages_shouldReturnEmptyList() throws Exception {
+        when(itemImageService.findImages(1L, false)).thenReturn(List.of());
+
+        mockMvc.perform(get("/api/items/1/images"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data").isArray())
+                .andExpect(jsonPath("$.data").isEmpty());
+    }
+
+    @Test
+    @DisplayName("查無此節點的圖片時應回傳 404")
+    void getImages_unknownItem_shouldReturnNotFound() throws Exception {
+        when(itemImageService.findImages(99L, false))
+                .thenThrow(new ServerException("查無此品類節點：99", HttpStatus.NOT_FOUND));
+
+        mockMvc.perform(get("/api/items/99/images"))
+                .andExpect(status().isNotFound())
+                .andExpect(jsonPath("$.success").value(false));
+    }
+
+    @Test
+    @DisplayName("建立圖片時同一節點的視角標籤重複應回傳 409")
+    void addImage_duplicatedViewLabel_shouldReturnConflict() throws Exception {
+        when(itemImageService.createImage(eq(1L), any(CreateItemImageRequest.class)))
+                .thenThrow(new ServerException("此節點已有同一視角標籤的圖片：爆炸圖", HttpStatus.CONFLICT));
+
+        mockMvc.perform(post("/api/items/1/images")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(imageRequest("爆炸圖", "https://cdn/bike.png"))))
+                .andExpect(status().isConflict());
+    }
+
+    @Test
+    @DisplayName("建立圖片未提供物件儲存位置時應回傳 400")
+    void addImage_missingStorageKey_shouldReturnBadRequest() throws Exception {
+        mockMvc.perform(post("/api/items/1/images")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(imageRequest("爆炸圖", "  "))))
+                .andExpect(status().isBadRequest());
+    }
+
+    private CreateItemImageRequest imageRequest(String viewLabel, String storageKey) {
+        return CreateItemImageRequest.builder()
+                .viewLabel(viewLabel)
+                .storageKey(storageKey)
+                .provenance(ProvenanceRequest.builder().sourceType(SourceType.MANUAL).build())
+                .build();
+    }
+
+    private List<HotspotPointPayload> triangle() {
+        return List.of(HotspotPointPayload.builder().x(0.1).y(0.1).build(),
+                HotspotPointPayload.builder().x(0.2).y(0.1).build(),
+                HotspotPointPayload.builder().x(0.2).y(0.2).build());
     }
 
     private CreateItemRequest createItemRequest(String displayName) {

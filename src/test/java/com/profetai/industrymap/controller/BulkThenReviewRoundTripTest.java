@@ -14,8 +14,11 @@ import com.profetai.industrymap.payloads.ProvenanceRequest;
 import com.profetai.industrymap.payloads.bulk.BatchCompositionItem;
 import com.profetai.industrymap.payloads.bulk.BatchCreateRequest;
 import com.profetai.industrymap.payloads.bulk.BatchIdentifierItem;
+import com.profetai.industrymap.payloads.bulk.BatchItemImageItem;
 import com.profetai.industrymap.payloads.company.CreateCompanyRequest;
+import com.profetai.industrymap.payloads.item.CreateHotspotRequest;
 import com.profetai.industrymap.payloads.item.CreateItemRequest;
+import com.profetai.industrymap.payloads.item.HotspotPointPayload;
 import com.profetai.industrymap.payloads.review.BatchReviewRequest;
 import com.profetai.industrymap.payloads.review.ReviewTarget;
 import com.profetai.industrymap.payloads.review.ReviewTargetKey;
@@ -25,6 +28,8 @@ import com.profetai.industrymap.repository.CompanyIdentifierRepository;
 import com.profetai.industrymap.repository.CompanyItemRoleRepository;
 import com.profetai.industrymap.repository.CompanyRepository;
 import com.profetai.industrymap.repository.ItemCompositionRepository;
+import com.profetai.industrymap.repository.ItemHotspotRepository;
+import com.profetai.industrymap.repository.ItemImageRepository;
 import com.profetai.industrymap.repository.ItemRepository;
 import com.profetai.industrymap.repository.MarketShareRepository;
 import org.junit.jupiter.api.AfterEach;
@@ -91,6 +96,12 @@ class BulkThenReviewRoundTripTest {
     @Autowired
     private MarketShareRepository marketShareRepository;
 
+    @Autowired
+    private ItemImageRepository itemImageRepository;
+
+    @Autowired
+    private ItemHotspotRepository itemHotspotRepository;
+
     /** 本次測試建立的資料，於 @AfterEach 依相依順序清除 */
     private final List<Created> created = new ArrayList<>();
 
@@ -98,6 +109,8 @@ class BulkThenReviewRoundTripTest {
 
     @AfterEach
     void cleanUp() {
+        deleteAll(ReviewTargetType.ITEM_HOTSPOT, itemHotspotRepository::deleteById);
+        deleteAll(ReviewTargetType.ITEM_IMAGE, itemImageRepository::deleteById);
         deleteAll(ReviewTargetType.MARKET_SHARE, marketShareRepository::deleteById);
         deleteAll(ReviewTargetType.COMPANY_ITEM_ROLE, companyItemRoleRepository::deleteById);
         deleteAll(ReviewTargetType.ITEM_COMPOSITION, itemCompositionRepository::deleteById);
@@ -156,6 +169,22 @@ class BulkThenReviewRoundTripTest {
                                 .provenance(externalProvenance("市場報告 " + fixtureId)).build()))
                         .build());
 
+        List<JsonNode> imageResults = bulkCreate("/api/bulk/item-images",
+                BatchCreateRequest.<BatchItemImageItem>builder()
+                        .items(List.of(BatchItemImageItem.builder()
+                                .itemId(bicycleId).viewLabel("爆炸圖")
+                                .storageKey("https://cdn.example.com/" + fixtureId + ".png")
+                                .provenance(manualProvenance()).build()))
+                        .build());
+        Long imageId = imageResults.get(0).get("targetId").asLong();
+
+        // 同一張圖上兩個位置標籤不同、卻指向同一個節點的熱區——組成關係仍是那唯一一筆（design D2）
+        List<JsonNode> hotspotResults = bulkCreate("/api/bulk/item-hotspots",
+                BatchCreateRequest.<CreateHotspotRequest>builder()
+                        .items(List.of(hotspotItem(imageId, derailleurId, "前變速器"),
+                                hotspotItem(imageId, derailleurId, "後變速器")))
+                        .build());
+
         List<JsonNode> allResults = new ArrayList<>();
         allResults.addAll(itemResults);
         allResults.addAll(compositionResults);
@@ -163,6 +192,8 @@ class BulkThenReviewRoundTripTest {
         allResults.addAll(identifierResults);
         allResults.addAll(roleResults);
         allResults.addAll(shareResults);
+        allResults.addAll(imageResults);
+        allResults.addAll(hotspotResults);
 
         // When：把回應轉成批次審核請求，刻意只帶自然鍵、不帶 targetId
         BatchReviewRequest reviewRequest = BatchReviewRequest.builder()
@@ -178,7 +209,8 @@ class BulkThenReviewRoundTripTest {
                 .andReturn().getResponse().getContentAsString();
         JsonNode reviewResults = objectMapper.readTree(reviewBody).get("data");
 
-        // Then：七筆資料全部審核完成，其中包含上一輪走查審不掉的公司識別碼
+        // Then：所有資料全部審核完成，其中包含上一輪走查審不掉的公司識別碼，
+        // 以及只能靠「節點 + 視角標籤 + 位置標籤」定位的兩筆熱區
         assertAll(
                 () -> assertEquals(allResults.size(), reviewResults.size()),
                 () -> assertTrue(allResults(reviewResults, result -> result.get("success").asBoolean()),
@@ -232,6 +264,18 @@ class BulkThenReviewRoundTripTest {
         created.stream()
                 .filter(entry -> entry.targetType() == targetType)
                 .forEach(entry -> deleteById.accept(entry.targetId()));
+    }
+
+    private CreateHotspotRequest hotspotItem(Long imageId, Long childItemId, String positionLabel) {
+        return CreateHotspotRequest.builder()
+                .itemImageId(imageId)
+                .childItemId(childItemId)
+                .positionLabel(positionLabel)
+                .polygon(List.of(HotspotPointPayload.builder().x(0.1).y(0.1).build(),
+                        HotspotPointPayload.builder().x(0.2).y(0.1).build(),
+                        HotspotPointPayload.builder().x(0.2).y(0.2).build()))
+                .provenance(manualProvenance())
+                .build();
     }
 
     private CreateItemRequest itemRequest(String displayName, boolean endProduct) {
