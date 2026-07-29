@@ -61,6 +61,22 @@ export interface Item {
   reviewStatus: string;
 }
 
+export interface ComponentNode {
+  itemId: number;
+  displayName: string;
+  children: ComponentNode[];
+}
+
+export interface CreateHotspotInput {
+  itemImageId: number;
+  childItemId: number;
+  positionLabel: string;
+  polygon: HotspotPoint[];
+  provenance: {
+    sourceType: 'MANUAL';
+  };
+}
+
 /**
  * 取出 data；失敗時以後端訊息拋錯。
  *
@@ -90,9 +106,20 @@ async function get<T>(path: string): Promise<T> {
   return unwrap(body);
 }
 
+async function post<T>(path: string, input: unknown): Promise<T> {
+  const response = await fetch(`${API_BASE}${path}`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(input),
+  });
+  const body = (await response.json()) as ServerResponse<T>;
+  return unwrap(body);
+}
+
 /** 品類節點的圖片與其熱區——一次呼叫拿完，畫一張可互動的圖不需要第二次往返 */
-export function fetchItemImages(itemId: number): Promise<ItemImage[]> {
-  return get<ItemImage[]>(`/api/items/${itemId}/images`);
+export function fetchItemImages(itemId: number, includeDrafts = false): Promise<ItemImage[]> {
+  const query = includeDrafts ? '?includeDrafts=true' : '';
+  return get<ItemImage[]>(`/api/items/${itemId}/images${query}`);
 }
 
 /** 某個零件的供應公司；查無資料時後端回空陣列而非 404 */
@@ -107,4 +134,14 @@ export function fetchItem(itemId: number): Promise<Item> {
 /** 終端成品列表——地圖的進入點，呼叫端不需事先知道任何 id */
 export function fetchEndProducts(): Promise<{ content: Item[] }> {
   return get<{ content: Item[] }>('/api/products?size=20');
+}
+
+/** 編輯器只需要下一層候選，限制 depth 可避免為一個下拉選單載入整棵品類樹 */
+export function fetchComponents(itemId: number): Promise<ComponentNode> {
+  return get<ComponentNode>(`/api/products/${itemId}/components?depth=1`);
+}
+
+/** 建立熱區集中走存取層，才能完整保留後端（例如 409）的可修正訊息 */
+export function createItemHotspot(input: CreateHotspotInput): Promise<Hotspot> {
+  return post<Hotspot>('/api/item-hotspots', input);
 }

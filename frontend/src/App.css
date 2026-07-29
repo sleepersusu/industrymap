@@ -29,6 +29,14 @@
   color: inherit;
 }
 
+.editor-toggle {
+  margin-left: auto;
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  font-size: 0.9rem;
+}
+
 main {
   display: grid;
   grid-template-columns: minmax(0, 2fr) minmax(260px, 1fr);
@@ -68,6 +76,10 @@ main {
   height: 100%;
 }
 
+.exploded-view svg.editing {
+  cursor: crosshair;
+}
+
 .exploded-view figcaption {
   margin-top: 0.5rem;
   font-size: 0.85rem;
@@ -91,6 +103,66 @@ main {
 .hotspot.selected {
   fill: rgba(220, 38, 38, 0.34);
   stroke: rgba(220, 38, 38, 0.95);
+}
+
+.editing .hotspot {
+  pointer-events: none;
+}
+
+.draft-line {
+  fill: none;
+  stroke: #dc2626;
+  stroke-width: 0.004;
+  pointer-events: none;
+}
+
+.draft-point {
+  fill: #dc2626;
+  stroke: white;
+  stroke-width: 0.002;
+  pointer-events: none;
+}
+
+.editor-help,
+.hotspot-form {
+  margin-bottom: 1rem;
+  padding: 0.75rem;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--surface);
+  font-size: 0.9rem;
+}
+
+.editor-help .error {
+  margin: 0.4rem 0 0;
+}
+
+.hotspot-form {
+  display: grid;
+  gap: 0.75rem;
+}
+
+.hotspot-form h2 {
+  margin: 0;
+  font-size: 1rem;
+}
+
+.hotspot-form label {
+  display: grid;
+  gap: 0.25rem;
+}
+
+.hotspot-form input,
+.hotspot-form select,
+.hotspot-form button {
+  font: inherit;
+  padding: 0.4rem 0.55rem;
+}
+
+.form-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 0.5rem;
 }
 
 /* 下鑽結果 */
