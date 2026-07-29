@@ -15,7 +15,9 @@ import com.profetai.industrymap.payloads.company.CompanyResponse;
 import com.profetai.industrymap.payloads.company.CreateCompanyAliasRequest;
 import com.profetai.industrymap.payloads.company.CreateCompanyRequest;
 import com.profetai.industrymap.payloads.company.CreateIdentifierRequest;
+import com.profetai.industrymap.payloads.company.CompanyItemResponse;
 import com.profetai.industrymap.service.company.CompanyService;
+import com.profetai.industrymap.service.supply.CompanyItemRoleService;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
@@ -54,6 +56,9 @@ class CompanyControllerTest {
 
     @MockitoBean
     private CompanyService companyService;
+
+    @MockitoBean
+    private CompanyItemRoleService companyItemRoleService;
 
     private final Company tsmc = Company.builder().id(1L).normalizedName("台積電").displayName("台積電")
             .country("TW").isPublic(true).sourceType(SourceType.MANUAL).build();
@@ -310,5 +315,55 @@ class CompanyControllerTest {
                         .content(objectMapper.writeValueAsString(request)))
                 .andExpect(status().isCreated())
                 .andExpect(jsonPath("$.data").value("tsmc"));
+    }
+
+    @Test
+    @DisplayName("查公司供應的零件應回傳節點與其角色清單")
+    void getSuppliedItems_shouldReturnItemsWithRoles() throws Exception {
+        when(companyService.getVisibleByReference("TWSE:2330")).thenReturn(tsmc);
+        when(companyItemRoleService.findSuppliedItems(1L, null, false)).thenReturn(List.of(
+                CompanyItemResponse.builder()
+                        .itemId(7L).displayName("晶片")
+                        .roles(List.of(CompanyRole.MANUFACTURE, CompanyRole.PACKAGING_TESTING))
+                        .build()));
+
+        mockMvc.perform(get("/api/companies/TWSE:2330/items"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data[0].itemId").value(7))
+                .andExpect(jsonPath("$.data[0].displayName").value("晶片"))
+                .andExpect(jsonPath("$.data[0].roles.length()").value(2));
+    }
+
+    @Test
+    @DisplayName("查公司供應的零件時應套用角色過濾")
+    void getSuppliedItems_withRoleFilter_shouldPassRoleThrough() throws Exception {
+        when(companyService.getVisibleByReference("TWSE:2330")).thenReturn(tsmc);
+        when(companyItemRoleService.findSuppliedItems(1L, CompanyRole.ASSEMBLY, false)).thenReturn(List.of());
+
+        mockMvc.perform(get("/api/companies/TWSE:2330/items").param("role", "ASSEMBLY"))
+                .andExpect(status().isOk());
+
+        verify(companyItemRoleService).findSuppliedItems(1L, CompanyRole.ASSEMBLY, false);
+    }
+
+    @Test
+    @DisplayName("公司沒有任何供應角色時應回 200 與空清單，而非 404")
+    void getSuppliedItems_noRoles_shouldReturnEmptyList() throws Exception {
+        when(companyService.getVisibleByReference("TWSE:2330")).thenReturn(tsmc);
+        when(companyItemRoleService.findSuppliedItems(1L, null, false)).thenReturn(List.of());
+
+        mockMvc.perform(get("/api/companies/TWSE:2330/items"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data").isEmpty());
+    }
+
+    @Test
+    @DisplayName("查無公司時查其供應零件應回 404")
+    void getSuppliedItems_unknownCompany_shouldReturnNotFound() throws Exception {
+        when(companyService.getVisibleByReference("TWSE:9999"))
+                .thenThrow(new ServerException("查無此公司：TWSE:9999", HttpStatus.NOT_FOUND));
+
+        mockMvc.perform(get("/api/companies/TWSE:9999/items"))
+                .andExpect(status().isNotFound());
     }
 }

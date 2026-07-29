@@ -70,7 +70,7 @@ PostgreSQL / RabbitMQ（或等效 queue）/ Redis（快取）/ 外部資料來�
 | `clients` | 外部資料來源封裝：股價行情 API、新聞來源 API、專利檢索（如智慧財產局 / Google Patents）、公司登記 / 公開資訊觀測站 API |
 | `job` | 背景任務：`config`（queue 設定）、`producer`、`consumer`、`scheduler`、`service`——用於定期同步股價 / 新聞 / 專利 |
 | `scheduler` | 排程任務入口（觸發 job producer） |
-| `config` | Spring 組態（Async、Security、WebClient、Flyway、Properties） |
+| `config` ★ | Spring 組態；目前只有 `WebCorsConfig`（允許來源可設定，刻意不用 `*`）。日後 Async、Security、WebClient 一併放這裡——**補上 Security 時 CORS 應移交給它的過濾鏈**，避免兩處各有一份設定互相覆蓋 |
 | `advice` ★ / `exceptions` ★ / `events` | 橫切與共用；`GlobalExceptionHandler` 已涵蓋 `ServerException` 與各類驗證失敗（400） |
 
 ## 實際採用的模式

@@ -9,6 +9,7 @@ import com.profetai.industrymap.model.Company;
 import com.profetai.industrymap.model.CompanyItemRole;
 import com.profetai.industrymap.model.Item;
 import com.profetai.industrymap.payloads.ProvenanceRequest;
+import com.profetai.industrymap.payloads.company.CompanyItemResponse;
 import com.profetai.industrymap.payloads.supply.CreateCompanyItemRoleRequest;
 import com.profetai.industrymap.payloads.supply.SupplierResponse;
 import com.profetai.industrymap.repository.CompanyItemRoleRepository;
@@ -250,6 +251,70 @@ class CompanyItemRoleServiceTest {
 
         // Then
         assertEquals("sram", suppliers.get(0).getCompanyReference());
+    }
+
+    @Test
+    @DisplayName("查公司供應的零件時，同一零件的多個角色應收斂成一筆")
+    void findSuppliedItems_multipleRolesOnSameItem_shouldReturnSingleEntry() {
+        // Given：台積電對同一顆晶片同時是製造與封測——唯一鍵含角色，這是兩筆合法資料
+        CompanyItemRole manufacture = CompanyItemRole.builder()
+                .company(tsmc).item(chip).companyRole(CompanyRole.MANUFACTURE)
+                .reviewStatus(ReviewStatus.VERIFIED).build();
+        CompanyItemRole packaging = CompanyItemRole.builder()
+                .company(tsmc).item(chip).companyRole(CompanyRole.PACKAGING_TESTING)
+                .reviewStatus(ReviewStatus.VERIFIED).build();
+        when(companyItemRoleRepository.findByCompanyIdAndReviewStatusInOrderByItemDisplayNameAscItemIdAsc(1L, Set.of(ReviewStatus.VERIFIED)))
+                .thenReturn(List.of(manufacture, packaging));
+
+        // When
+        List<CompanyItemResponse> items = companyItemRoleService.findSuppliedItems(1L, null, false);
+
+        // Then：問的是「這家公司做哪些零件」，答案的單位是零件，不該讓呼叫端自己去重
+        assertAll(
+                () -> assertEquals(1, items.size()),
+                () -> assertEquals(2L, items.get(0).getItemId()),
+                () -> assertEquals(List.of(CompanyRole.MANUFACTURE, CompanyRole.PACKAGING_TESTING),
+                        items.get(0).getRoles()));
+    }
+
+    @Test
+    @DisplayName("供應角色指向已駁回的品類節點時，該零件不得列入公司的零件清單")
+    void findSuppliedItems_roleOnRejectedItem_shouldBeExcluded() {
+        // 審核逐列套用：節點被駁回時掛在它下面的角色未必一併駁回。
+        // 少了這層過濾，公司頁會列出一個對外不存在、點下去必然 404 的零件
+        Item rejectedItem = Item.builder().id(9L).normalizedName("誤建零件").displayName("誤建零件")
+                .reviewStatus(ReviewStatus.REJECTED).build();
+        CompanyItemRole valid = CompanyItemRole.builder()
+                .company(tsmc).item(chip).companyRole(CompanyRole.MANUFACTURE)
+                .reviewStatus(ReviewStatus.VERIFIED).build();
+        CompanyItemRole onRejectedItem = CompanyItemRole.builder()
+                .company(tsmc).item(rejectedItem).companyRole(CompanyRole.DESIGN)
+                .reviewStatus(ReviewStatus.VERIFIED).build();
+        when(companyItemRoleRepository.findByCompanyIdAndReviewStatusInOrderByItemDisplayNameAscItemIdAsc(1L, Set.of(ReviewStatus.VERIFIED)))
+                .thenReturn(List.of(valid, onRejectedItem));
+
+        List<CompanyItemResponse> items = companyItemRoleService.findSuppliedItems(1L, null, false);
+
+        assertAll(
+                () -> assertEquals(1, items.size()),
+                () -> assertEquals(2L, items.get(0).getItemId()));
+    }
+
+    @Test
+    @DisplayName("查公司供應的零件並指定角色時應只查該角色")
+    void findSuppliedItems_withRoleFilter_shouldQueryFilteredByRole() {
+        when(companyItemRoleRepository.findByCompanyIdAndCompanyRoleAndReviewStatusInOrderByItemDisplayNameAscItemIdAsc(
+                1L, CompanyRole.ASSEMBLY, Set.of(ReviewStatus.VERIFIED)))
+                .thenReturn(List.of(CompanyItemRole.builder()
+                        .company(tsmc).item(chip).companyRole(CompanyRole.ASSEMBLY)
+                        .reviewStatus(ReviewStatus.VERIFIED).build()));
+
+        List<CompanyItemResponse> items = companyItemRoleService.findSuppliedItems(1L, CompanyRole.ASSEMBLY, false);
+
+        assertAll(
+                () -> assertEquals(List.of(CompanyRole.ASSEMBLY), items.get(0).getRoles()),
+                () -> verify(companyItemRoleRepository, never())
+                        .findByCompanyIdAndReviewStatusInOrderByItemDisplayNameAscItemIdAsc(any(), any()));
     }
 
     private void givenCompanyAndItem() {

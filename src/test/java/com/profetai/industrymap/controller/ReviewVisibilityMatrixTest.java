@@ -98,6 +98,7 @@ class ReviewVisibilityMatrixTest extends AbstractPostgresWebIntegrationTest {
     private static final String MARKET_SHARE_RANKING = "GET /api/items/{id}/market-share";
     private static final String LIST_COMPANIES = "GET /api/companies";
     private static final String GET_COMPANY = "GET /api/companies/{code}";
+    private static final String LIST_COMPANY_ITEMS = "GET /api/companies/{code}/items";
 
     /** 帶 review_status 的八張內容表 */
     private enum ContentTable {
@@ -210,6 +211,12 @@ class ReviewVisibilityMatrixTest extends AbstractPostgresWebIntegrationTest {
         matrix.put(GET_COMPANY, EndpointCoverage.of(
                 cell(ContentTable.COMPANY, Layer.MAIN_TABLE, "解析結果的公司本體"),
                 cell(ContentTable.COMPANY_IDENTIFIER, Layer.MAIN_TABLE, "代號解析，以及回應中的識別碼清單")));
+
+        matrix.put(LIST_COMPANY_ITEMS, EndpointCoverage.of(
+                cell(ContentTable.COMPANY_IDENTIFIER, Layer.MAIN_TABLE, "路徑的代號解析"),
+                cell(ContentTable.COMPANY, Layer.MAIN_TABLE, "解析結果的公司本體"),
+                cell(ContentTable.COMPANY_ITEM_ROLE, Layer.MAIN_TABLE, "該公司的供應角色"),
+                cell(ContentTable.ITEM, Layer.REFERENCED_ENTITY, "角色所指向的品類節點")));
 
         return Map.copyOf(matrix);
     }
@@ -615,6 +622,60 @@ class ReviewVisibilityMatrixTest extends AbstractPostgresWebIntegrationTest {
 
         assertFalse(body.contains(rejectedValue),
                 failure(MARKET_SHARE_RANKING, ContentTable.COMPANY_IDENTIFIER, Layer.JOINED_TABLE));
+    }
+
+    @Test
+    @DisplayName("已駁回的識別碼不得成為公司零件清單的定位手段")
+    void getCompanyItems_rejectedIdentifier_shouldReturnNotFound() throws Exception {
+        Company company = company(ReviewStatus.VERIFIED);
+        String rejectedValue = identifierValue();
+        identifier(company, IdentifierType.TWSE, rejectedValue, true, ReviewStatus.REJECTED);
+
+        MockHttpServletResponse response = fetch("/api/companies/TWSE:" + rejectedValue + "/items");
+
+        assertEquals(HttpStatus.NOT_FOUND.value(), response.getStatus(),
+                failure(LIST_COMPANY_ITEMS, ContentTable.COMPANY_IDENTIFIER, Layer.MAIN_TABLE));
+    }
+
+    @Test
+    @DisplayName("已駁回的公司不得取得其零件清單")
+    void getCompanyItems_rejectedCompany_shouldReturnNotFound() throws Exception {
+        Company rejected = company(ReviewStatus.REJECTED);
+        String value = identifierValue();
+        identifier(rejected, IdentifierType.TWSE, value, true, ReviewStatus.VERIFIED);
+
+        MockHttpServletResponse response = fetch("/api/companies/TWSE:" + value + "/items");
+
+        assertEquals(HttpStatus.NOT_FOUND.value(), response.getStatus(),
+                failure(LIST_COMPANY_ITEMS, ContentTable.COMPANY, Layer.MAIN_TABLE));
+    }
+
+    @Test
+    @DisplayName("已駁回的供應角色不得使零件出現在公司的零件清單")
+    void getCompanyItems_rejectedRole_shouldNotAppear() throws Exception {
+        Company company = company(ReviewStatus.VERIFIED);
+        Item part = item(ReviewStatus.VERIFIED, false);
+        role(company, part, CompanyRole.MANUFACTURE, ReviewStatus.REJECTED);
+
+        String body = okBody("/api/companies/" + company.getNormalizedName() + "/items");
+
+        assertFalse(body.contains(part.getDisplayName()),
+                failure(LIST_COMPANY_ITEMS, ContentTable.COMPANY_ITEM_ROLE, Layer.MAIN_TABLE));
+    }
+
+    @Test
+    @DisplayName("供應角色指向已駁回的品類節點時不得出現在公司的零件清單")
+    void getCompanyItems_roleOnRejectedItem_shouldNotAppear() throws Exception {
+        // 審核逐列套用：節點被駁回時掛在它下面的角色未必一併駁回，
+        // 少了這一格，公司頁會列出一個對外根本不存在、點下去必然 404 的零件
+        Company company = company(ReviewStatus.VERIFIED);
+        Item rejectedPart = item(ReviewStatus.REJECTED, false);
+        role(company, rejectedPart, CompanyRole.MANUFACTURE, ReviewStatus.VERIFIED);
+
+        String body = okBody("/api/companies/" + company.getNormalizedName() + "/items");
+
+        assertFalse(body.contains(rejectedPart.getDisplayName()),
+                failure(LIST_COMPANY_ITEMS, ContentTable.ITEM, Layer.REFERENCED_ENTITY));
     }
 
     // ---------------------------------------------------------------------

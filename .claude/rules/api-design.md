@@ -20,7 +20,8 @@
 | `/api/products/...` | 第一階段 | 產品 / BOM 拆解 | `/api/products/{id}/components` |
 | `/api/items/{id}` | 第一階段 | 品類節點的取得與**修正**（PUT 全量替換） | `PUT /api/items/{id}` |
 | `/api/companies` | 第一階段 | **公司列表**——從公司側進入地圖，可依名稱／別名、國別、公開發行狀態、供應零件過濾 | `GET /api/companies?name=&country=&itemId=&page=&size=` |
-| `/api/companies/...` | 第一階段 | 公司基本資料（含代號、對應零組件） | `/api/companies/{code}` |
+| `/api/companies/{code}` | 第一階段 | 公司基本資料與其識別碼 | `/api/companies/TWSE:2330` |
+| `/api/companies/{code}/items` | 第一階段 | **公司供應的零件**——從公司側往下走的入口；同一節點只出現一筆，角色收在 `roles` 內 | `/api/companies/TWSE:2330/items?role=MANUFACTURE` |
 | `/api/supply-relations/...` | 第一階段 | 供應角色與市佔率寫入（公司以**代號**指定，不收內部 id） | `/api/supply-relations/roles` |
 | `/api/reviews` | 第一階段 | 審核狀態流轉，八張內容表共用單一端點 | `/api/reviews`、`/api/reviews/batch` |
 | `/api/bulk/...` | 第一階段 | 內容資料的批次建立（內部作業端點） | `/api/bulk/items`、`/api/bulk/market-shares` |

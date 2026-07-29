@@ -8,6 +8,7 @@ import com.profetai.industrymap.helper.ReviewScopes;
 import com.profetai.industrymap.model.Company;
 import com.profetai.industrymap.model.CompanyItemRole;
 import com.profetai.industrymap.model.Item;
+import com.profetai.industrymap.payloads.company.CompanyItemResponse;
 import com.profetai.industrymap.payloads.supply.CreateCompanyItemRoleRequest;
 import com.profetai.industrymap.payloads.supply.SupplierResponse;
 import com.profetai.industrymap.repository.CompanyItemRoleRepository;
@@ -19,9 +20,12 @@ import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.util.Comparator;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import java.util.stream.Collectors;
 
 /**
  * 公司與零件的供應關係（design D6）。
@@ -106,6 +110,47 @@ public class CompanyItemRoleService {
                 companyService.referencesOf(visible.stream().map(CompanyItemRole::getCompany).toList());
         return visible.stream()
                 .map(role -> SupplierResponse.from(role, references.get(role.getCompany().getId())))
+                .toList();
+    }
+
+    /**
+     * 查公司供應的品類節點——{@link #findSuppliers} 的另一個方向，供公司詳情頁往下走。
+     *
+     * <p>以節點為單位聚合角色，同一個節點只出現一筆：一家公司對同一顆晶片可以同時是製造與封測，
+     * 讓它出現兩次等於把去重的責任丟給每一個呼叫端。</p>
+     *
+     * <p>回傳 payload 而非 entity：{@code item} 是 LAZY 關聯而 open-in-view 為 false，
+     * 組裝必須留在這個交易內。</p>
+     *
+     * @param companyRole   指定角色時只回該角色供應的節點；null 表示不過濾
+     * @param includeDrafts 是否納入草稿的供應角色；已駁回一律不外露
+     */
+    @Transactional(readOnly = true)
+    public List<CompanyItemResponse> findSuppliedItems(Long companyId, CompanyRole companyRole,
+                                                       boolean includeDrafts) {
+        Set<ReviewStatus> statuses = ReviewScopes.visibleStatuses(includeDrafts);
+        List<CompanyItemRole> roles = companyRole == null
+                ? companyItemRoleRepository
+                        .findByCompanyIdAndReviewStatusInOrderByItemDisplayNameAscItemIdAsc(companyId, statuses)
+                : companyItemRoleRepository
+                        .findByCompanyIdAndCompanyRoleAndReviewStatusInOrderByItemDisplayNameAscItemIdAsc(
+                                companyId, companyRole, statuses);
+
+        // 關係本身通過審核，不代表它指向的節點還算數；節點被駁回時這筆供應關係一併不外露。
+        // 同一條規則 CompanyRepository.findCompanies 與 ItemCompositionService 都已套用。
+        // LinkedHashMap 保住查詢的排序，角色本身另外排序——同一個節點的多筆角色在
+        // 資料庫回傳順序下沒有保證，不排的話 roles 陣列會無故變動
+        Map<Item, List<CompanyRole>> rolesByItem = roles.stream()
+                .filter(role -> ReviewScopes.isExposable(role.getItem().getReviewStatus()))
+                .collect(Collectors.groupingBy(CompanyItemRole::getItem, LinkedHashMap::new,
+                        Collectors.mapping(CompanyItemRole::getCompanyRole,
+                                Collectors.collectingAndThen(Collectors.toList(), sorted -> {
+                                    sorted.sort(Comparator.naturalOrder());
+                                    return sorted;
+                                }))));
+
+        return rolesByItem.entrySet().stream()
+                .map(entry -> CompanyItemResponse.from(entry.getKey(), entry.getValue()))
                 .toList();
     }
 }

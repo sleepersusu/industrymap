@@ -139,6 +139,22 @@ class QueryFanoutTest extends AbstractPostgresWebIntegrationTest {
                 () -> companyItemRoleService.findSuppliers(large.getId(), null, false));
     }
 
+    @Test
+    @DisplayName("查公司供應零件的 SQL 筆數不得隨零件數成長")
+    void findSuppliedItems_queryCount_shouldNotGrowWithFanout() {
+        Company small = companyWithSuppliedItems(SMALL_FANOUT);
+        Company large = companyWithSuppliedItems(LARGE_FANOUT);
+
+        assertConstantQueryCount("findSuppliedItems",
+                () -> companyItemRoleService.findSuppliedItems(small.getId(), null, false),
+                () -> companyItemRoleService.findSuppliedItems(large.getId(), null, false));
+
+        // 端點有兩支查詢，只驗其中一支的話，另一支的 @EntityGraph 被拿掉時守衛不會紅
+        assertConstantQueryCount("findSuppliedItems(role)",
+                () -> companyItemRoleService.findSuppliedItems(small.getId(), CompanyRole.MANUFACTURE, false),
+                () -> companyItemRoleService.findSuppliedItems(large.getId(), CompanyRole.MANUFACTURE, false));
+    }
+
     /**
      * 市佔率排名是 native query，Hibernate 不會對它套用 {@code @EntityGraph}，公司只能靠批次抓取補撈，
      * 因此筆數是 {@code ceil(n/50)} 而非恆定——扇出跨過批次值必然多一筆。
@@ -218,6 +234,15 @@ class QueryFanoutTest extends AbstractPostgresWebIntegrationTest {
             role(company(), part);
         }
         return part;
+    }
+
+    /** 一家公司，供應 fanout 個不同的零件 */
+    private Company companyWithSuppliedItems(int fanout) {
+        Company company = company();
+        for (int i = 0; i < fanout; i++) {
+            role(company, item(false));
+        }
+        return company;
     }
 
     /** 一個零件，同一切面有 fanout 筆市佔率 */

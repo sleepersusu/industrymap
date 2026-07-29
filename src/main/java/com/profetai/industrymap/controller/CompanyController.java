@@ -5,12 +5,15 @@ import com.profetai.industrymap.payloads.PageResponse;
 import com.profetai.industrymap.payloads.ServerResponse;
 import com.profetai.industrymap.payloads.ServerResponses;
 import com.profetai.industrymap.payloads.company.CompanyIdentifierResponse;
+import com.profetai.industrymap.payloads.company.CompanyItemQuery;
+import com.profetai.industrymap.payloads.company.CompanyItemResponse;
 import com.profetai.industrymap.payloads.company.CompanyQuery;
 import com.profetai.industrymap.payloads.company.CompanyResponse;
 import com.profetai.industrymap.payloads.company.CreateCompanyAliasRequest;
 import com.profetai.industrymap.payloads.company.CreateCompanyRequest;
 import com.profetai.industrymap.payloads.company.CreateIdentifierRequest;
 import com.profetai.industrymap.service.company.CompanyService;
+import com.profetai.industrymap.service.supply.CompanyItemRoleService;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.Parameter;
 import io.swagger.v3.oas.annotations.responses.ApiResponse;
@@ -42,6 +45,7 @@ import java.util.List;
 public class CompanyController {
 
     private final CompanyService companyService;
+    private final CompanyItemRoleService companyItemRoleService;
 
     @PostMapping
     @Operation(summary = "建立公司", description = "未上市公司可不帶任何識別碼，直接建立。")
@@ -89,6 +93,28 @@ public class CompanyController {
         Company company = companyService.getVisibleByReference(code);
         return ServerResponses.ok(
                 CompanyResponse.from(company, companyService.findVisibleIdentifiers(company.getId())));
+    }
+
+    @GetMapping("/{code}/items")
+    @Operation(summary = "列出公司供應的零件",
+            description = "從公司側往下走的入口：知道一家公司就能列出它供應的品類節點，並繼續展開。"
+                    + "同一個節點只出現一筆，該公司對它的所有角色收在 roles 內——"
+                    + "一家公司對同一顆晶片可以同時是製造與封測。可依角色過濾。"
+                    + "已駁回的公司視為不存在；已駁回的角色、以及指向已駁回節點的角色都不外露。")
+    @ApiResponses({
+            @ApiResponse(responseCode = "200", description = "成功；無供應角色時回空清單而非 404"),
+            @ApiResponse(responseCode = "400", description = "查詢條件驗證失敗"),
+            @ApiResponse(responseCode = "404", description = "查無此公司"),
+            @ApiResponse(responseCode = "409", description = "裸代號對應多家公司，須改用限定形式")
+    })
+    public ResponseEntity<ServerResponse<List<CompanyItemResponse>>> getSuppliedItems(
+            @Parameter(description = "公司對外識別，例：TWSE:2330；未上市公司用正規化名稱",
+                    example = "TWSE:2330") @PathVariable String code,
+            @Valid @ModelAttribute CompanyItemQuery query) {
+
+        Company company = companyService.getVisibleByReference(code);
+        return ServerResponses.ok(companyItemRoleService.findSuppliedItems(
+                company.getId(), query.getRole(), query.isIncludeDrafts()));
     }
 
     @PostMapping("/{code}/identifiers")

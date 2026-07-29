@@ -30,6 +30,25 @@ public interface CompanyItemRoleRepository extends JpaRepository<CompanyItemRole
     List<CompanyItemRole> findByItemIdAndCompanyRoleAndReviewStatusIn(Long itemId, CompanyRole companyRole,
                                                                      Collection<ReviewStatus> reviewStatuses);
 
+    /**
+     * 由公司查零件——{@code company_item_role} 的另一個方向，供公司詳情頁往下走。
+     *
+     * <p>節點一併載入（{@code @EntityGraph}）：回應要讀每個節點的名稱與審核狀態，
+     * 而 {@code Item} 的 {@code @Id} 標在欄位上，不 join fetch 就是逐筆 N+1。</p>
+     *
+     * <p>排序固定 {@code display_name} 再 {@code id}：沒有 ORDER BY 時拿到的是資料庫的回傳順序，
+     * 任一筆角色被審核（UPDATE）就可能讓整份清單重排，前端看到的零件順序無故變動。
+     * display_name 沒有唯一性保證，因此補 id 作為 tie-break。</p>
+     */
+    @EntityGraph(attributePaths = "item")
+    List<CompanyItemRole> findByCompanyIdAndReviewStatusInOrderByItemDisplayNameAscItemIdAsc(
+            Long companyId, Collection<ReviewStatus> reviewStatuses);
+
+    /** 依角色過濾：只列該公司以此角色供應的零件。節點一併載入、排序固定，理由同上 */
+    @EntityGraph(attributePaths = "item")
+    List<CompanyItemRole> findByCompanyIdAndCompanyRoleAndReviewStatusInOrderByItemDisplayNameAscItemIdAsc(
+            Long companyId, CompanyRole companyRole, Collection<ReviewStatus> reviewStatuses);
+
     boolean existsByCompanyIdAndItemIdAndCompanyRole(Long companyId, Long itemId, CompanyRole companyRole);
 
     /** 以自然鍵（公司 + 零件 + 角色）定位單筆供應關係，供審核端點使用（design D1） */
