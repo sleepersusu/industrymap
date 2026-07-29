@@ -19,7 +19,6 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.util.ArrayDeque;
-import java.util.ArrayList;
 import java.util.Deque;
 import java.util.HashSet;
 import java.util.List;
@@ -168,33 +167,12 @@ public class ItemCompositionService {
     @Transactional(readOnly = true)
     public List<Item> findReachableEndProducts(Long itemId, boolean includeDrafts) {
         getVisibleItem(itemId);
-        Set<ReviewStatus> statuses = ReviewScopes.visibleStatuses(includeDrafts);
-
-        List<Item> endProducts = new ArrayList<>();
-        Deque<Long> pending = new ArrayDeque<>();
-        Set<Long> visited = new HashSet<>();
-        pending.push(itemId);
-        visited.add(itemId);
-
-        while (!pending.isEmpty()) {
-            Long current = pending.pop();
-            for (ItemComposition edge : itemCompositionRepository.findByChildItemIdAndReviewStatusIn(current, statuses)) {
-                Item ancestor = edge.getParentItem();
-                if (!visited.add(ancestor.getId())) {
-                    continue;
-                }
-                // 節點被駁回代表這個節點本身不成立，經由它往上的路徑同樣不可信，不列入也不續走
-                if (!ReviewScopes.isExposable(ancestor.getReviewStatus())) {
-                    continue;
-                }
-                if (ancestor.isEndProduct()) {
-                    endProducts.add(ancestor);
-                }
-                // 終端成品仍可能是別的產品的零件（主機板→PC→…），因此一律繼續向上走
-                pending.push(ancestor.getId());
-            }
-        }
-        return endProducts;
+        // 走訪整條向上路徑交給資料庫一次完成：逐節點往返的寫法查詢次數隨圖的大小成長，
+        // 語意逐條對應寫在 repository 的查詢註解上
+        return itemCompositionRepository.findReachableEndProducts(
+                itemId,
+                ReviewScopes.visibleStatusNames(includeDrafts),
+                ReviewScopes.exposableStatusNames());
     }
 
     /**

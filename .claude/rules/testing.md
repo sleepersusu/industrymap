@@ -52,6 +52,46 @@ TDD 強制流程（含修 Bug 先寫失敗測試、trivial 豁免、完成須附
 
 規則本身見 `.claude/rules/architecture.md`「審核狀態過濾是查詢的預設義務」。
 
+## 對外查詢必須納入查詢筆數守衛
+
+`QueryFanoutTest`（`src/test/.../support/`）守的是「資料庫往返次數與結果筆數脫鉤」。
+N+1 是靜默劣化：資料量小時完全看不出來，等看得出來時已經是線上問題。
+
+- **斷言寫法固定為「兩種扇出的 SQL 筆數相同」，不得寫成「不得超過 N 筆」**。
+  後者綁的是某個當下的實作細節，任何無關的調整都會讓它紅；反覆誤報的守衛會被停用，
+  於是真的長回線性成長時反而沒人發現。
+- **大扇出必須大於 `default_batch_fetch_size`（目前 50）**。這一點決定守衛有沒有用：
+  兩種扇出都小於批次值時，批次抓取會把兩者都壓成一次 `IN` 查詢，於是「筆數相同」在
+  **有沒有 `@EntityGraph` 都成立**——守衛全綠卻什麼也沒守（此洞由 code review 實測抓到）。
+  扇出跨過批次值後，只有真的 join fetch 才恆定，靠批次兜底的會退回 `ceil(n/50)` 筆而紅。
+- 無法 join fetch 的查詢（native query）是唯一例外：它的筆數本來就只能是 `ceil(n/批次)`，
+  該格的大扇出留在批次值以下，並在該處寫明「守得住逐筆 N+1、守不住依賴批次大小」。
+- 新增會回傳多筆資料的對外查詢時，一併加一格。
+- 量測用 Hibernate `Statistics`，於測試執行期 `setStatisticsEnabled(true)` 開啟，
+  不要改 `application.properties`（那會讓該測試獨佔一個 Spring context）。
+  每次量測前 `entityManager.clear()`，否則第一級快取會讓第二次呼叫看起來不需要查詢。
+
+### N+1 的三種對策與適用範圍
+
+`Item` / `Company` 的 `@Id` 標在**欄位**上，Hibernate 無法在代理上攔截 identifier getter——
+**連讀主鍵都會觸發初始化**。因此任何碰到 LAZY 關聯的地方預設就是 N+1。
+
+| 手段 | 用在哪 | 治不到 |
+|---|---|---|
+| `@EntityGraph` | 衍生查詢；永遠一次 join fetch，且相依顯性寫在查詢上 | native query（Hibernate 不套用） |
+| `default_batch_fetch_size`（全域，50） | 兜底；**native query 的唯一解** | 迴圈本身送出的查詢 |
+| 遞迴 CTE | 圖走訪 | — |
+
+熱路徑一律加 `@EntityGraph`，不要只靠全域設定：後者是隱性的，讀單一查詢看不出關聯會不會被載入，
+且扇出大於批次值時又會退回多筆。**若把衍生查詢改寫成 native，`@EntityGraph` 會靜默失效**，
+這時只剩查詢筆數守衛抓得到。
+
+### 邏輯移進 SQL 時測試要跟著搬
+
+以 mock repository 驗證的走訪／組裝邏輯，一旦移進 SQL 就再也測不到任何東西——mock 只會回它自己被設定的值。
+這類測試必須改寫為對真實 PostgreSQL 的整合測試，**且要在換實作之前先改寫並確認在舊實作下通過**，
+否則沒有回歸基準。用 `verify(..., never())` 這種驗實作互動的斷言尤其會擋住重構，改以結果表達。
+
 ## 既有測試同步規則
 
 **修改任何邏輯類別（Service、Consumer、Repository、Helper 等）後，必須同步更新所有引用該類別的現有測試檔案。**

@@ -176,30 +176,9 @@ class ItemCompositionServiceTest {
         assertEquals(HttpStatus.NOT_FOUND, ex.getHttpStatus());
     }
 
-    @Test
-    @DisplayName("反向查詢應沿組成關係向上回溯並只回傳可達的終端成品")
-    void findReachableEndProducts_multiLevelUpwards_shouldReturnOnlyEndProducts() {
-        // Given：PCB → 主機板 → PC，主機板不是終端成品、PC 是；PCB 另外直接掛在汽車（終端成品）下
-        Item pcb = Item.builder().id(10L).normalizedName("pcb").displayName("PCB").build();
-        Item motherboard = Item.builder().id(11L).normalizedName("主機板").displayName("主機板").build();
-        Item pc = Item.builder().id(12L).normalizedName("pc").displayName("PC").isEndProduct(true).build();
-        Item car = Item.builder().id(13L).normalizedName("汽車").displayName("汽車").isEndProduct(true).build();
-        when(itemRepository.findById(10L)).thenReturn(Optional.of(pcb));
-        when(itemCompositionRepository.findByChildItemIdAndReviewStatusIn(10L, VERIFIED_ONLY))
-                .thenReturn(List.of(composition(motherboard, pcb), composition(car, pcb)));
-        when(itemCompositionRepository.findByChildItemIdAndReviewStatusIn(11L, VERIFIED_ONLY)).thenReturn(List.of(composition(pc, motherboard)));
-        when(itemCompositionRepository.findByChildItemIdAndReviewStatusIn(12L, VERIFIED_ONLY)).thenReturn(List.of());
-        when(itemCompositionRepository.findByChildItemIdAndReviewStatusIn(13L, VERIFIED_ONLY)).thenReturn(List.of());
-
-        // When
-        List<Item> endProducts = itemCompositionService.findReachableEndProducts(10L, false);
-
-        // Then：中間節點主機板不應出現在結果中
-        assertAll(
-                () -> assertEquals(2, endProducts.size()),
-                () -> assertTrue(endProducts.contains(pc)),
-                () -> assertTrue(endProducts.contains(car)));
-    }
+    // 反向回溯的走訪語意（多層回溯、已駁回祖先不列入也不續走、起點不列入、循環仍終止）
+    // 已移至 ItemReachableEndProductsTest 對真實 PostgreSQL 驗證：走訪由遞迴 CTE 完成，
+    // 在這裡 mock repository 只會驗到 mock 自己回了什麼。本類別僅保留不碰 SQL 的部分。
 
     @Test
     @DisplayName("組成樹中被駁回的子節點不得出現，即使指向它的關係本身已驗證")
@@ -216,29 +195,6 @@ class ItemCompositionServiceTest {
 
         // Then：關係驗證過不代表節點還算數，被駁回的節點整枝不外露
         assertTrue(root.getChildren().isEmpty());
-    }
-
-    @Test
-    @DisplayName("反向查詢時被駁回的上層節點不得列入終端成品")
-    void findReachableEndProducts_rejectedAncestor_shouldBeExcluded() {
-        // Given：PCB 掛在已駁回的「汽車」與正常的「PC」之下，兩者都是終端成品
-        Item pcb = Item.builder().id(10L).normalizedName("pcb").displayName("PCB").build();
-        Item pc = Item.builder().id(12L).normalizedName("pc").displayName("PC").isEndProduct(true).build();
-        Item rejectedCar = Item.builder().id(13L).normalizedName("汽車").displayName("汽車")
-                .isEndProduct(true).reviewStatus(ReviewStatus.REJECTED).build();
-        when(itemRepository.findById(10L)).thenReturn(Optional.of(pcb));
-        when(itemCompositionRepository.findByChildItemIdAndReviewStatusIn(10L, VERIFIED_ONLY))
-                .thenReturn(List.of(composition(pc, pcb), composition(rejectedCar, pcb)));
-        when(itemCompositionRepository.findByChildItemIdAndReviewStatusIn(12L, VERIFIED_ONLY)).thenReturn(List.of());
-
-        // When
-        List<Item> endProducts = itemCompositionService.findReachableEndProducts(10L, false);
-
-        // Then
-        assertAll(
-                () -> assertEquals(List.of(pc), endProducts),
-                () -> verify(itemCompositionRepository, never())
-                        .findByChildItemIdAndReviewStatusIn(13L, VERIFIED_ONLY));
     }
 
     @Test
